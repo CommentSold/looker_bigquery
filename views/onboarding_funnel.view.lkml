@@ -1,24 +1,4 @@
 view: onboarding_funnel {
-  parameter: start_date {
-    type: date
-    description: "Filter events from this date (inclusive). Optional."
-  }
-
-  parameter: end_date {
-    type: date
-    description: "Filter events through this date (inclusive). Optional."
-  }
-
-  parameter: filter_utm_regintent {
-    type: string
-    description: "Filter by utm_regintent. Optional."
-  }
-
-  parameter: filter_onboarding_session_id {
-    type: string
-    description: "Filter by onboarding_session_id. Optional."
-  }
-
   derived_table: {
     sql: SELECT
         base.timestamp,
@@ -73,10 +53,7 @@ view: onboarding_funnel {
             'onboarding_intent_entered',
             'onboarding_preview_shown'
           )
-          {% if start_date %} AND `timestamp` >= GREATEST(TIMESTAMP('{{ start_date }}'), TIMESTAMP('2026-01-22')) {% endif %}
-          {% if end_date %} AND `timestamp` <= TIMESTAMP('{{ end_date }}') {% endif %}
-          {% if filter_utm_regintent %} AND utm_regintent = '{{ filter_utm_regintent }}' {% endif %}
-          {% if filter_onboarding_session_id %} AND onboarding_session_id = '{{ filter_onboarding_session_id }}' {% endif %}
+          AND `timestamp` >= TIMESTAMP('2026-01-23')
       ) AS base;;
   }
 

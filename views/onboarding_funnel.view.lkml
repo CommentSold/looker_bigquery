@@ -17,13 +17,13 @@ view: onboarding_funnel {
 
   derived_table: {
     sql: SELECT
-        inner.timestamp,
-        inner.user_id,
-        inner.utm_regintent,
-        inner.onboarding_session_id,
-        inner.step_name_canonical AS step_name,
-        inner.step_variant,
-        CASE inner.step_name_canonical
+        base.timestamp,
+        base.user_id,
+        base.utm_regintent,
+        base.onboarding_session_id,
+        base.step_name_canonical AS step_name,
+        base.step_variant,
+        CASE base.step_name_canonical
           WHEN 'onboarding_started' THEN 1
           WHEN 'onboarding_intro_video_seen' THEN 2
           WHEN 'onboarding_ai_echo_intro_seen' THEN 3
@@ -34,7 +34,7 @@ view: onboarding_funnel {
           WHEN 'onboarding_intent_entered' THEN 8
           WHEN 'onboarding_preview_shown' THEN 9
         END AS step_ordinality,
-        inner.businessType
+        base.businessType
       FROM (
         SELECT
           `timestamp`,
@@ -71,7 +71,7 @@ view: onboarding_funnel {
           )
           [[ AND `timestamp` >= TIMESTAMP('{{ start_date }}') ]]
           [[ AND `timestamp` <= TIMESTAMP('{{ end_date }}') ]]
-      ) AS inner
+      ) AS base
     ;;
 
   }

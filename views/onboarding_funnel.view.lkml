@@ -39,8 +39,8 @@ view: onboarding_funnel {
         SELECT
           `timestamp`,
           user_id,
-          utm_regintent,
-          onboarding_session_id,
+          context_campaign_regintent as utm_regintent,
+          CAST(NULL AS STRING) AS onboarding_session_id,
           CASE
             WHEN step_name IN ('onboarding_headshot_entered','onboarding_headshot_auto_skipped','onboarding_headshot_manual_skipped') THEN 'onboarding_headshot_entered'
             WHEN step_name IN ('onboarding_niche_entered','onboarding_niche_auto_skipped') THEN 'onboarding_niche_entered'
@@ -54,21 +54,7 @@ view: onboarding_funnel {
           END AS step_variant,
           CAST(NULL AS STRING) AS businessType
         FROM `popshoplive-26f81.popstore.popstore_onboarding_screen_action`
-        WHERE scene = 'onboarding'
-          AND step_name IN (
-            'onboarding_started',
-            'onboarding_intro_video_seen',
-            'onboarding_ai_echo_intro_seen',
-            'onboarding_ai_echo_prompt_entered',
-            'onboarding_socials_entered',
-            'onboarding_headshot_entered',
-            'onboarding_headshot_auto_skipped',
-            'onboarding_headshot_manual_skipped',
-            'onboarding_niche_entered',
-            'onboarding_niche_auto_skipped',
-            'onboarding_intent_entered',
-            'onboarding_preview_shown'
-          )
+        WHERE true = true
           {% if start_date %} AND `timestamp` >= TIMESTAMP('{{ start_date }}') {% endif %}
           {% if end_date %} AND `timestamp` <= TIMESTAMP('{{ end_date }}') {% endif %}
       ) AS base

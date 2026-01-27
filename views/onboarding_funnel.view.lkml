@@ -1,10 +1,4 @@
-# onboarding_funnel.view.lkml
-# Onboarding funnel: 9 canonical steps (Headshot/Niche rolled up) with step_variant for segment coloring.
-# JIRA: utm_regintent, onboarding_session_id filters; step_name (x), count, step_variant (series).
-# Chart: step_name on x-axis, count or count_distinct_users as measure, step_variant as series/pivot for colors.
-
 view: onboarding_funnel {
-  # Optional: start_date/end_date push into DT; utm_regintent and onboarding_session_id are filtered via dimensions in the explore.
   parameter: start_date {
     type: date
     description: "Filter events from this date (inclusive). Optional."
@@ -13,6 +7,16 @@ view: onboarding_funnel {
   parameter: end_date {
     type: date
     description: "Filter events through this date (inclusive). Optional."
+  }
+
+  parameter: filter_utm_regintent {
+    type: string
+    description: "Filter by utm_regintent. Optional."
+  }
+
+  parameter: filter_onboarding_session_id {
+    type: string
+    description: "Filter by onboarding_session_id. Optional."
   }
 
   derived_table: {
@@ -55,8 +59,7 @@ view: onboarding_funnel {
           CAST(NULL AS STRING) AS businessType
         FROM `popshoplive-26f81.popstore.popstore_onboarding_screen_action`
         WHERE scene = 'onboarding'
-        AND `timestamp` > TIMESTAMP('2026-01-23')
-        AND step_name IN (
+          AND step_name IN (
             'onboarding_started',
             'onboarding_intro_video_seen',
             'onboarding_ai_echo_intro_seen',
@@ -70,9 +73,11 @@ view: onboarding_funnel {
             'onboarding_intent_entered',
             'onboarding_preview_shown'
           )
-      ) AS base
-    ;;
-
+          {% if start_date %} AND `timestamp` >= GREATEST(TIMESTAMP('{{ start_date }}'), TIMESTAMP('2026-01-22')) {% endif %}
+          {% if end_date %} AND `timestamp` <= TIMESTAMP('{{ end_date }}') {% endif %}
+          {% if filter_utm_regintent %} AND utm_regintent = '{{ filter_utm_regintent }}' {% endif %}
+          {% if filter_onboarding_session_id %} AND onboarding_session_id = '{{ filter_onboarding_session_id }}' {% endif %}
+      ) AS base;;
   }
 
   # --- Dimensions ---
@@ -109,11 +114,9 @@ view: onboarding_funnel {
     sql: ${TABLE}.onboarding_session_id ;;
   }
 
-  # Placeholder until businessType exists in popstore_onboarding_screen_action. Replace with real column when available.
   dimension: business_type {
     type: string
     sql: ${TABLE}.businessType ;;
-    description: "Placeholder. Wire to businessType column in source when available."
   }
 
   dimension_group: timestamp {
@@ -122,15 +125,12 @@ view: onboarding_funnel {
     timeframes: [time, date, week, month, quarter, year]
   }
 
-  # --- Measures ---
-  # Raw event count; default for funnel.
   measure: count {
     type: count
     drill_fields: [detail*]
     description: "Event count per step. Use count_distinct_users for unique users when a user can emit multiple events per step."
   }
 
-  # Optional (JIRA): unique users per step; prefer when multiple events per user per step.
   measure: count_distinct_users {
     type: count_distinct
     sql: ${user_id} ;;

@@ -69,8 +69,8 @@ view: onboarding_funnel {
             'onboarding_intent_entered',
             'onboarding_preview_shown'
           )
-          [[ AND `timestamp` >= TIMESTAMP('{{ start_date }}') ]]
-          [[ AND `timestamp` <= TIMESTAMP('{{ end_date }}') ]]
+          {% if start_date %} AND `timestamp` >= TIMESTAMP('{{ start_date }}') {% endif %}
+          {% if end_date %} AND `timestamp` <= TIMESTAMP('{{ end_date }}') {% endif %}
       ) AS base
     ;;
 

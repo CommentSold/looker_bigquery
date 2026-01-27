@@ -54,9 +54,22 @@ view: onboarding_funnel {
           END AS step_variant,
           CAST(NULL AS STRING) AS businessType
         FROM `popshoplive-26f81.popstore.popstore_onboarding_screen_action`
-        WHERE true = true
-          {% if start_date %} AND `timestamp` >= TIMESTAMP('{{ start_date }}') {% endif %}
-          {% if end_date %} AND `timestamp` <= TIMESTAMP('{{ end_date }}') {% endif %}
+        WHERE scene = 'onboarding'
+        AND `timestamp` > TIMESTAMP('2026-01-23')
+        AND step_name IN (
+            'onboarding_started',
+            'onboarding_intro_video_seen',
+            'onboarding_ai_echo_intro_seen',
+            'onboarding_ai_echo_prompt_entered',
+            'onboarding_socials_entered',
+            'onboarding_headshot_entered',
+            'onboarding_headshot_auto_skipped',
+            'onboarding_headshot_manual_skipped',
+            'onboarding_niche_entered',
+            'onboarding_niche_auto_skipped',
+            'onboarding_intent_entered',
+            'onboarding_preview_shown'
+          )
       ) AS base
     ;;
 

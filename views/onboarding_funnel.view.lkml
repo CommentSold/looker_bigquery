@@ -75,8 +75,7 @@ view: onboarding_funnel {
           )
           {% if start_date %} AND `timestamp` >= GREATEST(TIMESTAMP('{{ start_date }}'), TIMESTAMP('2026-01-22')) {% endif %}
           {% if end_date %} AND `timestamp` <= TIMESTAMP('{{ end_date }}') {% endif %}
-          {% if filter_utm_regintent %} AND utm_regintent = '{{ filter_utm_regintent }}' {% endif %}
-          {% if filter_onboarding_session_id %} AND onboarding_session_id = '{{ filter_onboarding_session_id }}' {% endif %}
+          {% if filter_utm_regintent %} AND context_campaign_regintent = '{{ filter_utm_regintent }}' {% endif %}
       ) AS base;;
   }
 

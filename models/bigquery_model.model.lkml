@@ -9,3 +9,5 @@ include: "/views/*.view.lkml"                # include all views in the views/ f
 #
 explore: popstore_onboarding_screen_action {
 }
+explore: ai_onboarding {
+}

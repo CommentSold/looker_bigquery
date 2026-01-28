@@ -118,7 +118,10 @@ view: onboarding_funnel {
             'onboarding_email_login_verified',
             'onboarding_complete'
           )
-          AND `timestamp` >= TIMESTAMP('2026-01-23')
+          {% if start_date %} AND `timestamp` >= TIMESTAMP('{{ start_date }}') {% endif %}
+          {% if end_date %} AND `timestamp` <= TIMESTAMP('{{ end_date }}') {% endif %}
+          {% if filter_utm_regintent %} AND utm_regintent = '{{ filter_utm_regintent }}' {% endif %}
+          {% if filter_onboarding_session_id %} AND onboarding_session_id = '{{ filter_onboarding_session_id }}' {% endif %}
       ) AS t1
       LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_profiles` t2 ON t2.user_id = t1.user_id
       LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_private_profiles` t3 ON t3.user_id = t1.user_id

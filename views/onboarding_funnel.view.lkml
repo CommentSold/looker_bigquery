@@ -218,15 +218,15 @@ view: onboarding_funnel {
   measure: count {
     type: count
     drill_fields: [detail*]
-    description: "Event count per step. Use count_distinct_users for unique users when a user can emit multiple events per step."
+    description: "Event count per step. Use count_distinct_sessions for unique sessions (funnel)."
   }
 
-  measure: count_distinct_users {
+  measure: count_distinct_sessions {
     type: count_distinct
-    sql: ${user_id} ;;
+    sql: ${onboarding_session_id} ;;
     value_format_name: decimal_0
     drill_fields: [detail*]
-    description: "Unique user count per step. Use instead of count when measuring users (not raw events)."
+    description: "Unique onboarding sessions per step. Use for funnel; pre-signup steps typically have NULL user_id."
   }
 
   set: detail {

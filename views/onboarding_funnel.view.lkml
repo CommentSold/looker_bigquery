@@ -135,6 +135,7 @@ view: onboarding_funnel {
   dimension: step_name {
     type: string
     sql: ${TABLE}.step_name ;;
+    order_by_field: step_ordinality
     description: "Canonical key (reporting_step_key) for the funnel step. Use for grouping; order by step_ordinality."
   }
 
@@ -153,6 +154,7 @@ view: onboarding_funnel {
   dimension: bar_name {
     type: string
     sql: ${TABLE}.bar_name ;;
+    order_by_field: step_ordinality
     description: "Display-friendly funnel bar label. Use for chart axis labels; order by step_ordinality."
   }
 

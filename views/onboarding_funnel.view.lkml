@@ -1,12 +1,7 @@
 view: onboarding_funnel {
-  filter: start_date {
+  filter: date_range {
     type: date
-    description: "Filter events from this date (inclusive). Optional."
-  }
-
-  filter: end_date {
-    type: date
-    description: "Filter events through this date (inclusive). Optional."
+    description: "Filter events by date range. Use 'is in range' in the UI to pick start and end. Optional."
   }
 
   filter: filter_utm_regintent {
@@ -118,8 +113,7 @@ view: onboarding_funnel {
             'onboarding_email_login_verified',
             'onboarding_complete'
           )
-          AND {% condition start_date %} `timestamp` {% endcondition %}
-          AND {% condition end_date %} `timestamp` {% endcondition %}
+          AND {% condition date_range %} `timestamp` {% endcondition %}
           AND {% condition filter_utm_regintent %} utm_regintent {% endcondition %}
           AND {% condition filter_onboarding_session_id %} onboarding_session_id {% endcondition %}
       ) AS t1

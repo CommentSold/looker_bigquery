@@ -1,20 +1,20 @@
 view: onboarding_funnel {
-  parameter: start_date {
+  filter: start_date {
     type: date
     description: "Filter events from this date (inclusive). Optional."
   }
 
-  parameter: end_date {
+  filter: end_date {
     type: date
     description: "Filter events through this date (inclusive). Optional."
   }
 
-  parameter: filter_utm_regintent {
+  filter: filter_utm_regintent {
     type: string
     description: "Filter by utm_regintent. Optional."
   }
 
-  parameter: filter_onboarding_session_id {
+  filter: filter_onboarding_session_id {
     type: string
     description: "Filter by onboarding_session_id. Optional."
   }
@@ -118,10 +118,10 @@ view: onboarding_funnel {
             'onboarding_email_login_verified',
             'onboarding_complete'
           )
-          {% if start_date %} AND `timestamp` >= TIMESTAMP('{{ start_date }}') {% endif %}
-          {% if end_date %} AND `timestamp` <= TIMESTAMP('{{ end_date }}') {% endif %}
-          {% if filter_utm_regintent %} AND utm_regintent = '{{ filter_utm_regintent }}' {% endif %}
-          {% if filter_onboarding_session_id %} AND onboarding_session_id = '{{ filter_onboarding_session_id }}' {% endif %}
+          AND {% condition start_date %} `timestamp` {% endcondition %}
+          AND {% condition end_date %} `timestamp` {% endcondition %}
+          AND {% condition filter_utm_regintent %} utm_regintent {% endcondition %}
+          AND {% condition filter_onboarding_session_id %} onboarding_session_id {% endcondition %}
       ) AS t1
       LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_profiles` t2 ON t2.user_id = t1.user_id
       LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_private_profiles` t3 ON t3.user_id = t1.user_id

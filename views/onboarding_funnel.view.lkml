@@ -4,16 +4,6 @@ view: onboarding_funnel {
     description: "Filter events by date range. Use 'is in range' in the UI to pick start and end. Optional."
   }
 
-  filter: filter_utm_regintent {
-    type: string
-    description: "Filter by utm_regintent. Optional."
-  }
-
-  filter: filter_onboarding_session_id {
-    type: string
-    description: "Filter by onboarding_session_id. Optional."
-  }
-
   derived_table: {
     sql: SELECT
         t1.timestamp,
@@ -114,8 +104,8 @@ view: onboarding_funnel {
             'onboarding_complete'
           )
           AND {% condition date_range %} `timestamp` {% endcondition %}
-          AND {% condition filter_utm_regintent %} utm_regintent {% endcondition %}
-          AND {% condition filter_onboarding_session_id %} onboarding_session_id {% endcondition %}
+          AND {% condition utm_regintent %} utm_regintent {% endcondition %}
+          AND {% condition onboarding_session_id %} onboarding_session_id {% endcondition %}
       ) AS t1
       LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_profiles` t2 ON t2.user_id = t1.user_id
       LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_private_profiles` t3 ON t3.user_id = t1.user_id

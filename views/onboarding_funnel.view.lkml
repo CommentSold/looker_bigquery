@@ -58,79 +58,80 @@ view: onboarding_funnel {
         END AS is_combined_step,
         t1.business_type
       FROM (
-        a.`timestamp`,
-        a.user_id,
-        a.utm_regintent,
-        a.onboarding_session_id,
-        a.tiktok_handle,
-        a.instagram_handle,
-        a.instagram_followers,
-        a.tiktok_followers,
-        CASE
-          WHEN a.step_name IN ('onboarding_headshot_entered','onboarding_headshot_auto_skipped','onboarding_headshot_manual_skipped') THEN 'onboarding_headshot_entered'
-          WHEN a.step_name IN ('onboarding_niche_entered','onboarding_niche_auto_skipped') THEN 'onboarding_niche_entered'
-          WHEN a.step_name IN ('onboarding_user_otp_verified','onboarding_email_login_verified') THEN 'onboarding_auth_verified'
-          ELSE a.step_name
-        END AS step_name_canonical,
-        CASE
-          WHEN a.step_name = 'onboarding_headshot_auto_skipped' THEN 'auto_skipped'
-          WHEN a.step_name = 'onboarding_headshot_manual_skipped' THEN 'manual_skipped'
-          WHEN a.step_name = 'onboarding_niche_auto_skipped' THEN 'auto_skipped'
-          WHEN a.step_name = 'onboarding_user_otp_verified' THEN 'otp_verified'
-          WHEN a.step_name = 'onboarding_email_login_verified' THEN 'email_login_verified'
-          ELSE 'completed'
-        END AS step_variant,
-        a.business_type
-      FROM `popshoplive-26f81.popstore.popstore_onboarding_screen_action` a
-      WHERE a.scene = 'onboarding'
-        AND a.step_name IN (
-          'onboarding_started',
-          'onboarding_intro_video_seen',
-          'onboarding_ai_echo_intro_seen',
-          'onboarding_ai_echo_prompt_entered',
-          'onboarding_socials_entered',
-          'onboarding_headshot_entered',
-          'onboarding_headshot_auto_skipped',
-          'onboarding_headshot_manual_skipped',
-          'onboarding_niche_entered',
-          'onboarding_niche_auto_skipped',
-          'onboarding_intent_entered',
-          'onboarding_preview_shown',
-          'onboarding_url_confirmed',
-          'onboarding_contact_info_submitted',
-          'onboarding_user_otp_verified',
-          'onboarding_email_login_verified',
-          'onboarding_complete'
-        )
-        AND {% condition date_range %} a.`timestamp` {% endcondition %}
-        AND {% condition utm_regintent %} a.utm_regintent {% endcondition %}
-        AND {% condition onboarding_session_id %} a.onboarding_session_id {% endcondition %}
-        AND NOT (
-          a.step_name = 'onboarding_niche_auto_skipped'
-          AND (
-            NOT EXISTS (
-              SELECT 1
-              FROM `popshoplive-26f81.popstore.popstore_onboarding_screen_action` b
-              WHERE b.onboarding_session_id = a.onboarding_session_id
-                AND b.scene = 'onboarding'
-                AND b.step_name = 'onboarding_socials_entered'
-                AND {% condition date_range %} b.`timestamp` {% endcondition %}
-                AND {% condition utm_regintent %} b.utm_regintent {% endcondition %}
-                AND {% condition onboarding_session_id %} b.onboarding_session_id {% endcondition %}
-            )
-            OR NOT EXISTS (
-              SELECT 1
-              FROM `popshoplive-26f81.popstore.popstore_onboarding_screen_action` c
-              WHERE c.onboarding_session_id = a.onboarding_session_id
-                AND c.scene = 'onboarding'
-                AND c.step_name IN ('onboarding_headshot_entered','onboarding_headshot_auto_skipped','onboarding_headshot_manual_skipped')
-                AND {% condition date_range %} c.`timestamp` {% endcondition %}
-                AND {% condition utm_regintent %} c.utm_regintent {% endcondition %}
-                AND {% condition onboarding_session_id %} c.onboarding_session_id {% endcondition %}
+        SELECT
+          a.`timestamp`,
+          a.user_id,
+          a.utm_regintent,
+          a.onboarding_session_id,
+          a.tiktok_handle,
+          a.instagram_handle,
+          a.instagram_followers,
+          a.tiktok_followers,
+          CASE
+            WHEN a.step_name IN ('onboarding_headshot_entered','onboarding_headshot_auto_skipped','onboarding_headshot_manual_skipped') THEN 'onboarding_headshot_entered'
+            WHEN a.step_name IN ('onboarding_niche_entered','onboarding_niche_auto_skipped') THEN 'onboarding_niche_entered'
+            WHEN a.step_name IN ('onboarding_user_otp_verified','onboarding_email_login_verified') THEN 'onboarding_auth_verified'
+            ELSE a.step_name
+          END AS step_name_canonical,
+          CASE
+            WHEN a.step_name = 'onboarding_headshot_auto_skipped' THEN 'auto_skipped'
+            WHEN a.step_name = 'onboarding_headshot_manual_skipped' THEN 'manual_skipped'
+            WHEN a.step_name = 'onboarding_niche_auto_skipped' THEN 'auto_skipped'
+            WHEN a.step_name = 'onboarding_user_otp_verified' THEN 'otp_verified'
+            WHEN a.step_name = 'onboarding_email_login_verified' THEN 'email_login_verified'
+            ELSE 'completed'
+          END AS step_variant,
+          a.business_type
+        FROM `popshoplive-26f81.popstore.popstore_onboarding_screen_action` a
+        WHERE a.scene = 'onboarding'
+          AND a.step_name IN (
+            'onboarding_started',
+            'onboarding_intro_video_seen',
+            'onboarding_ai_echo_intro_seen',
+            'onboarding_ai_echo_prompt_entered',
+            'onboarding_socials_entered',
+            'onboarding_headshot_entered',
+            'onboarding_headshot_auto_skipped',
+            'onboarding_headshot_manual_skipped',
+            'onboarding_niche_entered',
+            'onboarding_niche_auto_skipped',
+            'onboarding_intent_entered',
+            'onboarding_preview_shown',
+            'onboarding_url_confirmed',
+            'onboarding_contact_info_submitted',
+            'onboarding_user_otp_verified',
+            'onboarding_email_login_verified',
+            'onboarding_complete'
+          )
+          AND {% condition date_range %} a.`timestamp` {% endcondition %}
+          AND {% condition utm_regintent %} a.utm_regintent {% endcondition %}
+          AND {% condition onboarding_session_id %} a.onboarding_session_id {% endcondition %}
+          AND NOT (
+            a.step_name = 'onboarding_niche_auto_skipped'
+            AND (
+              NOT EXISTS (
+                SELECT 1
+                FROM `popshoplive-26f81.popstore.popstore_onboarding_screen_action` b
+                WHERE b.onboarding_session_id = a.onboarding_session_id
+                  AND b.scene = 'onboarding'
+                  AND b.step_name = 'onboarding_socials_entered'
+                  AND {% condition date_range %} b.`timestamp` {% endcondition %}
+                  AND {% condition utm_regintent %} b.utm_regintent {% endcondition %}
+                  AND {% condition onboarding_session_id %} b.onboarding_session_id {% endcondition %}
+              )
+              OR NOT EXISTS (
+                SELECT 1
+                FROM `popshoplive-26f81.popstore.popstore_onboarding_screen_action` c
+                WHERE c.onboarding_session_id = a.onboarding_session_id
+                  AND c.scene = 'onboarding'
+                  AND c.step_name IN ('onboarding_headshot_entered','onboarding_headshot_auto_skipped','onboarding_headshot_manual_skipped')
+                  AND {% condition date_range %} c.`timestamp` {% endcondition %}
+                  AND {% condition utm_regintent %} c.utm_regintent {% endcondition %}
+                  AND {% condition onboarding_session_id %} c.onboarding_session_id {% endcondition %}
+              )
             )
           )
-        )
-        QUALIFY ROW_NUMBER() OVER (PARTITION BY a.onboarding_session_id, a.step_name_canonical ORDER BY a.`timestamp` DESC) = 1
+          QUALIFY ROW_NUMBER() OVER (PARTITION BY a.onboarding_session_id, a.step_name_canonical ORDER BY a.`timestamp` DESC) = 1
       ) AS t1
       LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_profiles` t2 ON t2.user_id = t1.user_id
       LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_private_profiles` t3 ON t3.user_id = t1.user_id

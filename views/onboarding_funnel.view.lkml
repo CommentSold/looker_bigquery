@@ -115,9 +115,6 @@ view: onboarding_funnel {
                 WHERE b.onboarding_session_id = a.onboarding_session_id
                   AND b.scene = 'onboarding'
                   AND b.step_name = 'onboarding_socials_entered'
-                  AND {% condition date_range %} b.`timestamp` {% endcondition %}
-                  AND {% condition utm_regintent %} b.utm_regintent {% endcondition %}
-                  AND {% condition onboarding_session_id %} b.onboarding_session_id {% endcondition %}
               )
               OR NOT EXISTS (
                 SELECT 1
@@ -125,13 +122,10 @@ view: onboarding_funnel {
                 WHERE c.onboarding_session_id = a.onboarding_session_id
                   AND c.scene = 'onboarding'
                   AND c.step_name IN ('onboarding_headshot_entered','onboarding_headshot_auto_skipped','onboarding_headshot_manual_skipped')
-                  AND {% condition date_range %} c.`timestamp` {% endcondition %}
-                  AND {% condition utm_regintent %} c.utm_regintent {% endcondition %}
-                  AND {% condition onboarding_session_id %} c.onboarding_session_id {% endcondition %}
               )
             )
           )
-          QUALIFY ROW_NUMBER() OVER (PARTITION BY a.onboarding_session_id, a.step_name_canonical ORDER BY a.`timestamp` DESC) = 1
+          QUALIFY ROW_NUMBER() OVER (PARTITION BY a.onboarding_session_id, step_name_canonical ORDER BY a.`timestamp`) = 1
       ) AS t1
       LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_profiles` t2 ON t2.user_id = t1.user_id
       LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_private_profiles` t3 ON t3.user_id = t1.user_id

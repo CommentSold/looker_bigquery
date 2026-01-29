@@ -106,6 +106,7 @@ view: onboarding_funnel {
           AND {% condition date_range %} `timestamp` {% endcondition %}
           AND {% condition utm_regintent %} utm_regintent {% endcondition %}
           AND {% condition onboarding_session_id %} onboarding_session_id {% endcondition %}
+          QUALIFY ROW_NUMBER() OVER (PARTITION BY onboarding_session_id, step_name_canonical ORDER BY `timestamp`) = 1
       ) AS t1
       LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_profiles` t2 ON t2.user_id = t1.user_id
       LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_private_profiles` t3 ON t3.user_id = t1.user_id

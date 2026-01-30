@@ -25,6 +25,7 @@ view: onboarding_funnel {
           WHEN 'onboarding_intro_video_seen' THEN 2
           WHEN 'onboarding_ai_echo_intro_seen' THEN 3
           WHEN 'onboarding_ai_echo_prompt_entered' THEN 4
+          WHEN 'onboarding_ai_echo_template_selected' THEN 4
           WHEN 'onboarding_socials_entered' THEN 5
           WHEN 'onboarding_headshot_entered' THEN 6
           WHEN 'onboarding_niche_entered' THEN 7
@@ -39,6 +40,7 @@ view: onboarding_funnel {
           WHEN 'onboarding_started' THEN 'Onboarding Started'
           WHEN 'onboarding_intro_video_seen' THEN 'Intro Video Seen'
           WHEN 'onboarding_ai_echo_intro_seen' THEN 'AI Echo Introduction'
+          WHEN 'onboarding_ai_echo_template_selected' THEN 'AI Echo Prompt Entered'
           WHEN 'onboarding_ai_echo_prompt_entered' THEN 'AI Echo Prompt Entered'
           WHEN 'onboarding_socials_entered' THEN 'Social Accounts Entered'
           WHEN 'onboarding_headshot_entered' THEN 'Headshot Step Completed'
@@ -89,6 +91,7 @@ view: onboarding_funnel {
             'onboarding_intro_video_seen',
             'onboarding_ai_echo_intro_seen',
             'onboarding_ai_echo_prompt_entered',
+            'onboarding_ai_echo_template_selected',
             'onboarding_socials_entered',
             'onboarding_headshot_entered',
             'onboarding_headshot_auto_skipped',

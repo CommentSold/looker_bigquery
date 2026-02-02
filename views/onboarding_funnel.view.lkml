@@ -20,7 +20,7 @@ view: onboarding_funnel {
         t1.instagram_followers,
         t1.tiktok_handle,
         t1.tiktok_followers,
-        t1.context_campaign_campaign,
+        t1.utm_campaign,
         t1.context_user_agent,
         t1.device_category,
         CASE t1.step_name_canonical
@@ -72,7 +72,7 @@ view: onboarding_funnel {
           a.instagram_handle,
           a.instagram_followers,
           a.tiktok_followers,
-          a.context_campaign_campaign,
+          a.utm_campaign,
           a.context_user_agent,
           CASE
             WHEN REGEXP_CONTAINS(LOWER(a.context_user_agent), r'(bot|crawler|spider|crawl|slurp|googlebot|bingpreview|facebookexternalhit|twitterbot|linkedinbot|whatsapp|telegrambot|discordbot)') THEN 'BOT'
@@ -246,9 +246,9 @@ view: onboarding_funnel {
     sql: ${TABLE}.tiktok_followers ;;
   }
 
-  dimension: context_campaign_campaign {
+  dimension: utm_campaign {
     type: string
-    sql: ${TABLE}.context_campaign_campaign ;;
+    sql: ${TABLE}.utm_campaign ;;
   }
 
   dimension: context_user_agent {
@@ -301,7 +301,7 @@ view: onboarding_funnel {
       instagram_followers,
       tiktok_handle,
       tiktok_followers,
-      context_campaign_campaign,
+      utm_campaign,
       context_user_agent,
       device_category
     ]

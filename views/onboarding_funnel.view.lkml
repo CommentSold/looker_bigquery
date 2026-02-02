@@ -21,6 +21,7 @@ view: onboarding_funnel {
         t1.tiktok_handle,
         t1.tiktok_followers,
         t1.context_campaign_campaign,
+        t1.context_user_agent,
         CASE t1.step_name_canonical
           WHEN 'onboarding_started' THEN 1
           WHEN 'onboarding_intro_video_seen' THEN 2
@@ -71,6 +72,7 @@ view: onboarding_funnel {
           a.instagram_followers,
           a.tiktok_followers,
           a.context_campaign_campaign,
+          a.context_user_agent,
           CASE
             WHEN a.step_name IN ('onboarding_headshot_entered','onboarding_headshot_auto_skipped','onboarding_headshot_manual_skipped') THEN 'onboarding_headshot_entered'
             WHEN a.step_name IN ('onboarding_niche_entered','onboarding_niche_auto_skipped') THEN 'onboarding_niche_entered'
@@ -239,6 +241,11 @@ view: onboarding_funnel {
     sql: ${TABLE}.context_campaign_campaign ;;
   }
 
+  dimension: context_user_agent {
+    type: string
+    sql: ${TABLE}.context_user_agent ;;
+  }
+
   dimension_group: timestamp {
     type: time
     sql: ${TABLE}.timestamp ;;
@@ -280,6 +287,7 @@ view: onboarding_funnel {
       tiktok_handle,
       tiktok_followers,
       context_campaign_campaign,
+      context_user_agent
     ]
   }
 }

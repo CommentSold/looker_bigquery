@@ -22,7 +22,7 @@ view: onboarding_funnel {
         t1.tiktok_followers,
         t1.context_campaign_campaign,
         t1.context_user_agent,
-        t1.device_category
+        t1.device_category,
         CASE t1.step_name_canonical
           WHEN 'onboarding_started' THEN 1
           WHEN 'onboarding_intro_video_seen' THEN 2
@@ -82,7 +82,7 @@ view: onboarding_funnel {
             WHEN LOWER(a.context_user_agent) REGEXP '(macintosh|mac os x)' AND LOWER(a.context_user_agent) NOT REGEXP '(iphone|ipad)' THEN 'MACOS_DESKTOP'
             WHEN LOWER(a.context_user_agent) REGEXP '(linux|x11)' AND LOWER(a.context_user_agent) NOT REGEXP 'android' THEN 'LINUX_DESKTOP'
           ELSE 'OTHER'
-          END AS device_category
+          END AS device_category,
           CASE
             WHEN a.step_name IN ('onboarding_headshot_entered','onboarding_headshot_auto_skipped','onboarding_headshot_manual_skipped') THEN 'onboarding_headshot_entered'
             WHEN a.step_name IN ('onboarding_niche_entered','onboarding_niche_auto_skipped') THEN 'onboarding_niche_entered'

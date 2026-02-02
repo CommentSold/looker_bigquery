@@ -75,13 +75,13 @@ view: onboarding_funnel {
           a.context_campaign_campaign,
           a.context_user_agent,
           CASE
-            WHEN LOWER(a.context_user_agent) REGEXP '(bot|crawler|spider|crawl|slurp|googlebot|bingpreview|facebookexternalhit|twitterbot|linkedinbot|whatsapp|telegrambot|discordbot)' THEN 'BOT'
-            WHEN LOWER(a.context_user_agent) REGEXP '(iphone|ipad|ipod|cpu iphone os|cpu os)' THEN 'IOS'
-            WHEN LOWER(a.context_user_agent) REGEXP 'android' THEN 'ANDROID'
-            WHEN LOWER(a.context_user_agent) REGEXP '(windows nt|win64|wow64)' THEN 'WINDOWS_DESKTOP'
-            WHEN LOWER(a.context_user_agent) REGEXP '(macintosh|mac os x)' AND LOWER(a.context_user_agent) NOT REGEXP '(iphone|ipad)' THEN 'MACOS_DESKTOP'
-            WHEN LOWER(a.context_user_agent) REGEXP '(linux|x11)' AND LOWER(a.context_user_agent) NOT REGEXP 'android' THEN 'LINUX_DESKTOP'
-          ELSE 'OTHER'
+            WHEN REGEXP_CONTAINS(LOWER(a.context_user_agent), r'(bot|crawler|spider|crawl|slurp|googlebot|bingpreview|facebookexternalhit|twitterbot|linkedinbot|whatsapp|telegrambot|discordbot)') THEN 'BOT'
+            WHEN REGEXP_CONTAINS(LOWER(a.context_user_agent), r'(iphone|ipad|ipod|cpu iphone os|cpu os)') THEN 'IOS'
+            WHEN REGEXP_CONTAINS(LOWER(a.context_user_agent), r'android') THEN 'ANDROID'
+            WHEN REGEXP_CONTAINS(LOWER(a.context_user_agent), r'(windows nt|win64|wow64)') THEN 'WINDOWS_DESKTOP'
+            WHEN REGEXP_CONTAINS(LOWER(a.context_user_agent), r'(macintosh|mac os x)') AND NOT REGEXP_CONTAINS(LOWER(a.context_user_agent), r'(iphone|ipad)') THEN 'MACOS_DESKTOP'
+            WHEN REGEXP_CONTAINS(LOWER(a.context_user_agent), r'(linux|x11)') AND NOT REGEXP_CONTAINS(LOWER(a.context_user_agent), r'android') THEN 'LINUX_DESKTOP'
+            ELSE 'OTHER'
           END AS device_category,
           CASE
             WHEN a.step_name IN ('onboarding_headshot_entered','onboarding_headshot_auto_skipped','onboarding_headshot_manual_skipped') THEN 'onboarding_headshot_entered'

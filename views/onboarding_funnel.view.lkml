@@ -108,7 +108,7 @@ view: onboarding_funnel {
             ) THEN 'LINUX_DESKTOP'
 
             ELSE 'OTHER'
-          END AS device_category
+          END AS device_category,
           CASE
             WHEN a.step_name IN ('onboarding_headshot_entered','onboarding_headshot_auto_skipped','onboarding_headshot_manual_skipped') THEN 'onboarding_headshot_entered'
             WHEN a.step_name IN ('onboarding_niche_entered','onboarding_niche_auto_skipped') THEN 'onboarding_niche_entered'

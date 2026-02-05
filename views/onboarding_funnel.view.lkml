@@ -12,14 +12,6 @@ view: onboarding_funnel {
         t1.onboarding_session_id,
         t1.step_name_canonical AS step_name,
         t1.step_variant,
-        t2.first_name,
-        t3.last_name,
-        t3.email,
-        t4.phone_number,
-        t1.instagram_handle,
-        t1.instagram_followers,
-        t1.tiktok_handle,
-        t1.tiktok_followers,
         t1.utm_campaign,
         t1.context_user_agent,
         t1.device_category,
@@ -66,22 +58,57 @@ view: onboarding_funnel {
           a.user_id,
           a.utm_regintent,
           a.onboarding_session_id,
-          a.tiktok_handle,
-          a.instagram_handle,
-          a.instagram_followers,
-          a.tiktok_followers,
           a.utm_campaign,
           a.context_user_agent,
           CASE
-            WHEN REGEXP_CONTAINS(LOWER(a.context_user_agent), r'(bot|crawler|spider|crawl|slurp|googlebot|bingpreview|facebookexternalhit|twitterbot|linkedinbot|whatsapp|telegrambot|discordbot)') THEN 'BOT'
-            WHEN REGEXP_CONTAINS(LOWER(a.context_user_agent), r'wv') THEN 'WEBVIEW'
-            WHEN REGEXP_CONTAINS(LOWER(a.context_user_agent), r'(iphone|ipad|ipod|cpu iphone os|cpu os)') THEN 'IOS'
-            WHEN REGEXP_CONTAINS(LOWER(a.context_user_agent), r'android') THEN 'ANDROID'
-            WHEN REGEXP_CONTAINS(LOWER(a.context_user_agent), r'(windows nt|win64|wow64)') THEN 'WINDOWS_DESKTOP'
-            WHEN REGEXP_CONTAINS(LOWER(a.context_user_agent), r'(macintosh|mac os x)') AND NOT REGEXP_CONTAINS(LOWER(a.context_user_agent), r'(iphone|ipad)') THEN 'MACOS_DESKTOP'
-            WHEN REGEXP_CONTAINS(LOWER(a.context_user_agent), r'(linux|x11)') AND NOT REGEXP_CONTAINS(LOWER(a.context_user_agent), r'android') THEN 'LINUX_DESKTOP'
+            /* 1️⃣ Bots & crawlers */
+            WHEN REGEXP_CONTAINS(
+              LOWER(a.context_user_agent),
+              r'(bot|crawler|spider|crawl|slurp|googlebot|bingpreview|facebookexternalhit|twitterbot|linkedinbot|discordbot|telegrambot|google-read-aloud)'
+            ) THEN 'BOT'
+
+            /* 2️⃣ In-app browsers / WebViews */
+            WHEN REGEXP_CONTAINS(
+              LOWER(a.context_user_agent),
+              r'(wv|webview|meta-iab|metaiab|facebook|fban|fbav|instagram|iabmv/1|whatsapp|line|linkedinapp|snapchat|gsa/|googleapp/|youtube|tiktok|reddit)'
+            ) THEN 'WEBVIEW'
+
+            /* 3️⃣ iOS (real Safari / Chrome iOS) */
+            WHEN REGEXP_CONTAINS(
+              LOWER(a.context_user_agent),
+              r'(iphone|ipad|ipod|cpu iphone os|cpu os)'
+            ) THEN 'IOS'
+
+            /* 4️⃣ Android (real Chrome / Samsung Internet) */
+            WHEN REGEXP_CONTAINS(
+              LOWER(a.context_user_agent),
+              r'android'
+            ) THEN 'ANDROID'
+
+            /* 5️⃣ Desktop OSes */
+            WHEN REGEXP_CONTAINS(
+              LOWER(a.context_user_agent),
+              r'(windows nt|win64|wow64)'
+            ) THEN 'WINDOWS_DESKTOP'
+
+            WHEN REGEXP_CONTAINS(
+              LOWER(a.context_user_agent),
+              r'(macintosh|mac os x)'
+            ) AND NOT REGEXP_CONTAINS(
+              LOWER(a.context_user_agent),
+              r'(iphone|ipad)'
+            ) THEN 'MACOS_DESKTOP'
+
+            WHEN REGEXP_CONTAINS(
+              LOWER(a.context_user_agent),
+              r'(linux|x11)'
+            ) AND NOT REGEXP_CONTAINS(
+              LOWER(a.context_user_agent),
+              r'android'
+            ) THEN 'LINUX_DESKTOP'
+
             ELSE 'OTHER'
-          END AS device_category,
+          END AS device_category
           CASE
             WHEN a.step_name IN ('onboarding_headshot_entered','onboarding_headshot_auto_skipped','onboarding_headshot_manual_skipped') THEN 'onboarding_headshot_entered'
             WHEN a.step_name IN ('onboarding_niche_entered','onboarding_niche_auto_skipped') THEN 'onboarding_niche_entered'
@@ -146,7 +173,6 @@ view: onboarding_funnel {
       ) AS t1
       LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_profiles` t2 ON t2.user_id = t1.user_id
       LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_private_profiles` t3 ON t3.user_id = t1.user_id
-      LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_users` t4 ON t4.user_id = t1.user_id
       WHERE (t3.email IS NULL OR (
         LOWER(t3.email) NOT LIKE '%@test.com'
         AND LOWER(t3.email) NOT LIKE '%@example.com'
@@ -206,46 +232,6 @@ view: onboarding_funnel {
     sql: ${TABLE}.business_type ;;
   }
 
-  dimension: first_name {
-    type: string
-    sql: ${TABLE}.first_name ;;
-  }
-
-  dimension: last_name {
-    type: string
-    sql: ${TABLE}.last_name ;;
-  }
-
-  dimension: email {
-    type: string
-    sql: ${TABLE}.email ;;
-  }
-
-  dimension: phone_number {
-    type: string
-    sql: ${TABLE}.phone_number ;;
-  }
-
-  dimension: instagram_handle {
-    type: string
-    sql: ${TABLE}.instagram_handle ;;
-  }
-
-  dimension: instagram_followers {
-    type: string
-    sql: ${TABLE}.instagram_followers ;;
-  }
-
-  dimension: tiktok_handle {
-    type: string
-    sql: ${TABLE}.tiktok_handle ;;
-  }
-
-  dimension: tiktok_followers {
-    type: string
-    sql: ${TABLE}.tiktok_followers ;;
-  }
-
   dimension: utm_campaign {
     type: string
     sql: ${TABLE}.utm_campaign ;;
@@ -293,14 +279,6 @@ view: onboarding_funnel {
       onboarding_session_id,
       business_type,
       timestamp_time,
-      first_name,
-      last_name,
-      email,
-      phone_number,
-      instagram_handle,
-      instagram_followers,
-      tiktok_handle,
-      tiktok_followers,
       utm_campaign,
       context_user_agent,
       device_category

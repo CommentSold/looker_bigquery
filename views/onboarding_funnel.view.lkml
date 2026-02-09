@@ -16,9 +16,9 @@ view: onboarding_funnel {
         t1.context_user_agent,
         t1.device_category,
         CASE t1.step_name_canonical
-          WHEN 'onboarding_started' THEN 1
+          /*WHEN 'onboarding_started' THEN 1
           WHEN 'onboarding_intro_video_seen' THEN 2
-          WHEN 'onboarding_ai_echo_intro_seen' THEN 3
+          WHEN 'onboarding_ai_echo_intro_seen' THEN 3 */
           WHEN 'onboarding_ai_echo_prompt_entered' THEN 4
           WHEN 'onboarding_socials_entered' THEN 5
           WHEN 'onboarding_headshot_entered' THEN 6
@@ -31,9 +31,9 @@ view: onboarding_funnel {
           WHEN 'onboarding_complete' THEN 13
         END AS step_ordinality,
         CASE t1.step_name_canonical
-          WHEN 'onboarding_started' THEN 'Onboarding Started'
+          /* WHEN 'onboarding_started' THEN 'Onboarding Started'
           WHEN 'onboarding_intro_video_seen' THEN 'Intro Video Seen'
-          WHEN 'onboarding_ai_echo_intro_seen' THEN 'AI Echo Introduction'
+          WHEN 'onboarding_ai_echo_intro_seen' THEN 'AI Echo Introduction' */
           WHEN 'onboarding_ai_echo_prompt_entered' THEN 'AI Echo Prompt Entered'
           WHEN 'onboarding_socials_entered' THEN 'Social Accounts Entered'
           WHEN 'onboarding_headshot_entered' THEN 'Headshot Step Completed'
@@ -128,9 +128,9 @@ view: onboarding_funnel {
         FROM `popshoplive-26f81.popstore.popstore_onboarding_screen_action` a
         WHERE a.scene = 'onboarding'
           AND a.step_name IN (
-            'onboarding_started',
+            /*'onboarding_started',
             'onboarding_intro_video_seen',
-            'onboarding_ai_echo_intro_seen',
+            'onboarding_ai_echo_intro_seen',*/
             'onboarding_ai_echo_prompt_entered',
             'onboarding_ai_echo_template_selected',
             'onboarding_socials_entered',

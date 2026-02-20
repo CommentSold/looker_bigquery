@@ -15,6 +15,10 @@ view: onboarding_funnel {
         t1.utm_campaign,
         t1.context_user_agent,
         t1.device_category,
+        CASE
+          WHEN t1.utm_campaign IS NOT NULL THEN 'marketing_campaign'
+          ELSE 'organic_walk-in'
+        END AS acquisition_source,
         CASE t1.step_name_canonical
           /*WHEN 'onboarding_started' THEN 1
           WHEN 'onboarding_intro_video_seen' THEN 2
@@ -205,6 +209,11 @@ view: onboarding_funnel {
     description: "Funnel order 1-13. Sort by this for correct step order."
   }
 
+  dimension: acquisition_source {
+    type: string
+    sql: ${TABLE}.acquisition_source ;;
+  }
+
   dimension: bar_name {
     type: string
     sql: ${TABLE}.bar_name ;;
@@ -278,6 +287,7 @@ view: onboarding_funnel {
       bar_name,
       step_variant,
       step_ordinality,
+      acquisition_source,
       is_combined_step,
       user_id,
       utm_regintent,

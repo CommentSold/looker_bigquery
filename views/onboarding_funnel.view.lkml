@@ -273,6 +273,14 @@ view: onboarding_funnel {
     description: "Event count per step. Use count_distinct_sessions for unique sessions (funnel)."
   }
 
+  measure: count_onboarding_complete {
+    type: number
+    sql: CASE WHEN ${step_name} = 'onboarding_complete' THEN 1 ELSE NULL END ;;
+    value_format_name: decimal_0
+    description: "Counts only onboarding_complete events."
+    drill_fields: [detail*]
+  }
+
   measure: count_distinct_sessions {
     type: count_distinct
     sql: ${onboarding_session_id} ;;

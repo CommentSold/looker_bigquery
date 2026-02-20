@@ -274,11 +274,8 @@ view: onboarding_funnel {
   }
 
   measure: count_onboarding_complete {
-    type: number
-    sql: CASE WHEN ${step_name} = 'onboarding_complete' THEN 1 ELSE NULL END ;;
-    value_format_name: decimal_0
-    description: "Counts only onboarding_complete events."
-    drill_fields: [detail*]
+    type: count
+    filters: [step_name: "onboarding_complete"]
   }
 
   measure: count_distinct_sessions {

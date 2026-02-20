@@ -169,7 +169,12 @@ view: onboarding_funnel {
               )
             )
           )
-          QUALIFY ROW_NUMBER() OVER (PARTITION BY a.onboarding_session_id, step_name_canonical ORDER BY a.`timestamp`) = 1
+          QUALIFY
+            CASE
+              WHEN a.utm_regintent = 'aiecho'
+                THEN ROW_NUMBER() OVER (PARTITION BY step_name_canonical ORDER BY a.`timestamp`) = 1
+              ELSE ROW_NUMBER() OVER (PARTITION BY a.onboarding_session_id, step_name_canonical ORDER BY a.`timestamp`) = 1
+            END = 1
       ) AS t1
       LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_profiles` t2 ON t2.user_id = t1.user_id
       LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_private_profiles` t3 ON t3.user_id = t1.user_id

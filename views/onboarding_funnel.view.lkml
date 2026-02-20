@@ -173,7 +173,6 @@ view: onboarding_funnel {
             CASE
               WHEN a.utm_regintent = 'aiecho'
                 THEN TRUE
-                END
               ELSE ROW_NUMBER() OVER (PARTITION BY a.onboarding_session_id, step_name_canonical ORDER BY a.`timestamp`) = 1
             END = TRUE
       ) AS t1

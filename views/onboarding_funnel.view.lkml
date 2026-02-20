@@ -276,6 +276,7 @@ view: onboarding_funnel {
   measure: count_onboarding_complete {
     type: count
     filters: [step_name: "onboarding_complete"]
+    drill_fields: [detail*]
   }
 
   measure: count_distinct_sessions {

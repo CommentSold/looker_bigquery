@@ -21,7 +21,6 @@ view: onboarding_funnel {
         t5.url_code AS sign_up_url_code,
         t5.username AS sign_up_user_username,
         t3.email AS sign_up_user_email,
-        t7.url_code as referrer_url_code,
         CASE
           WHEN t1.utm_campaign IS NOT NULL THEN 'marketing_campaign'
           ELSE 'organic_walk-in'
@@ -157,7 +156,6 @@ view: onboarding_funnel {
       LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_private_profiles` t3 ON t3.user_id = t1.user_id
       LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_stores` t4 ON t4.store_id = t1.user_id
       INNER JOIN `popshoplive-26f81.dbt_popshop.dim_profiles` t5 ON t5.user_id = t1.user_id AND t5.user_type in ('seller', 'verifiedSeller') and t5.apps_pop_store = TRUE
-      LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_profiles` t7 ON t7.presentee_user_id = t1.user_id
       WHERE (t3.email IS NULL OR (
         LOWER(t3.email) NOT LIKE '%@test.com'
         AND LOWER(t3.email) NOT LIKE '%@example.com'
@@ -265,11 +263,6 @@ view: onboarding_funnel {
     sql: 'https://pop.store/' || ${TABLE}.sign_up_url_code ;;
   }
 
-  dimension: referrer_url {
-    type: string
-    sql: 'https://pop.store/' || ${TABLE}.referrer_url_code  ;;
-  }
-
   dimension: sign_up_user_email {
     type: string
     sql: ${TABLE}.sign_up_user_email ;;
@@ -302,7 +295,6 @@ view: onboarding_funnel {
       sign_up_user_url,
       sign_up_user_email,
       acquisition_source,
-      referrer_url,
       utm_campaign,
       utm_regintent,
     ]

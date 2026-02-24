@@ -13,6 +13,8 @@ view: onboarding_funnel {
         a.onboarding_session_id,
         a.context_campaign_campaign AS marketing_campaign,
         a.context_user_agent,
+        a.scene,
+        a.step_name,
         CASE
           WHEN REGEXP_CONTAINS(LOWER(a.context_user_agent), r'(bot|crawler|spider|crawl|slurp|googlebot|bingpreview|facebookexternalhit|twitterbot|linkedinbot|discordbot|telegrambot|google-read-aloud)') THEN 'BOT'
           WHEN REGEXP_CONTAINS(LOWER(a.context_user_agent), r'(wv|webview|meta-iab|metaiab|facebook|fban|fbav|instagram|iabmv/1|whatsapp|line|linkedinapp|snapchat|gsa/|googleapp/|youtube|tiktok|reddit)') THEN 'WEBVIEW'
@@ -100,7 +102,7 @@ view: onboarding_funnel {
       oe.utm_regintent,
       oe.business_type,
       oe.`timestamp`,
-      oe.step_name_canonical AS step_name,
+      oe.step_name,
       CASE
         WHEN oe.marketing_campaign IS NOT NULL THEN 'marketing_campaign'
         WHEN oe.user_id IS NULL THEN 'event_not_fired'

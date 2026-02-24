@@ -9,33 +9,112 @@ view: onboarding_funnel {
       SELECT
         user_id
       FROM `popshoplive-26f81.dbt_popshop.dim_profiles`
-      WHERE {% condition date_range %} created_at {% endcondition %}
+      WHERE user_type IN ('seller', 'verifiedSeller')
+        AND apps_pop_store = TRUE
+    ),
+    onboarding_events AS (
+      SELECT
+        a.`timestamp`,
+        a.user_id,
+        a.utm_regintent,
+        a.onboarding_session_id,
+        a.context_campaign_campaign AS utm_campaign,
+        a.context_user_agent,
+        CASE
+          WHEN REGEXP_CONTAINS(LOWER(a.context_user_agent), r'(bot|crawler|spider|crawl|slurp|googlebot|bingpreview|facebookexternalhit|twitterbot|linkedinbot|discordbot|telegrambot|google-read-aloud)') THEN 'BOT'
+          WHEN REGEXP_CONTAINS(LOWER(a.context_user_agent), r'(wv|webview|meta-iab|metaiab|facebook|fban|fbav|instagram|iabmv/1|whatsapp|line|linkedinapp|snapchat|gsa/|googleapp/|youtube|tiktok|reddit)') THEN 'WEBVIEW'
+          WHEN REGEXP_CONTAINS(LOWER(a.context_user_agent), r'(iphone|ipad|ipod|cpu iphone os|cpu os)') THEN 'IOS'
+          WHEN REGEXP_CONTAINS(LOWER(a.context_user_agent), r'android') THEN 'ANDROID'
+          WHEN REGEXP_CONTAINS(LOWER(a.context_user_agent), r'(windows nt|win64|wow64)') THEN 'WINDOWS_DESKTOP'
+          WHEN REGEXP_CONTAINS(LOWER(a.context_user_agent), r'(macintosh|mac os x)') AND NOT REGEXP_CONTAINS(LOWER(a.context_user_agent), r'(iphone|ipad)') THEN 'MACOS_DESKTOP'
+          WHEN REGEXP_CONTAINS(LOWER(a.context_user_agent), r'(linux|x11)') AND NOT REGEXP_CONTAINS(LOWER(a.context_user_agent), r'android') THEN 'LINUX_DESKTOP'
+          ELSE 'OTHER'
+        END AS device_category,
+        CASE
+          WHEN a.step_name IN ('onboarding_headshot_entered','onboarding_headshot_auto_skipped','onboarding_headshot_manual_skipped') THEN 'onboarding_headshot_entered'
+          WHEN a.step_name IN ('onboarding_niche_entered','onboarding_niche_auto_skipped') THEN 'onboarding_niche_entered'
+          WHEN a.step_name IN ('onboarding_user_otp_verified','onboarding_email_login_verified') THEN 'onboarding_auth_verified'
+          WHEN a.step_name IN ('onboarding_ai_echo_prompt_entered','onboarding_ai_echo_template_selected') THEN 'onboarding_ai_echo_prompt_entered'
+          ELSE a.step_name
+        END AS step_name_canonical,
+        CASE
+          WHEN a.step_name = 'onboarding_headshot_auto_skipped' THEN 'auto_skipped'
+          WHEN a.step_name = 'onboarding_headshot_manual_skipped' THEN 'manual_skipped'
+          WHEN a.step_name = 'onboarding_niche_auto_skipped' THEN 'auto_skipped'
+          WHEN a.step_name = 'onboarding_user_otp_verified' THEN 'otp_verified'
+          WHEN a.step_name = 'onboarding_email_login_verified' THEN 'email_login_verified'
+          ELSE 'completed'
+        END AS step_variant,
+        a.business_type
+      FROM `popshoplive-26f81.popstore.popstore_onboarding_screen_action` a
+      WHERE a.scene = 'onboarding'
+        AND a.step_name IN (
+          'onboarding_ai_echo_prompt_entered',
+          'onboarding_ai_echo_template_selected',
+          'onboarding_socials_entered',
+          'onboarding_headshot_entered',
+          'onboarding_headshot_auto_skipped',
+          'onboarding_headshot_manual_skipped',
+          'onboarding_niche_entered',
+          'onboarding_niche_auto_skipped',
+          'onboarding_intent_entered',
+          'onboarding_preview_shown',
+          'onboarding_url_confirmed',
+          'onboarding_contact_info_submitted',
+          'onboarding_user_otp_verified',
+          'onboarding_email_login_verified',
+          'onboarding_complete'
+        )
+        AND {% condition date_range %} a.`timestamp` {% endcondition %}
+        AND {% condition utm_regintent %} a.utm_regintent {% endcondition %}
+        AND {% condition onboarding_session_id %} a.onboarding_session_id {% endcondition %}
+        AND NOT (
+          a.step_name = 'onboarding_niche_auto_skipped'
+          AND (
+            NOT EXISTS (
+              SELECT 1
+              FROM `popshoplive-26f81.popstore.popstore_onboarding_screen_action` b
+              WHERE b.onboarding_session_id = a.onboarding_session_id
+                AND b.scene = 'onboarding'
+                AND b.step_name = 'onboarding_socials_entered'
+            )
+            OR NOT EXISTS (
+              SELECT 1
+              FROM `popshoplive-26f81.popstore.popstore_onboarding_screen_action` c
+              WHERE c.onboarding_session_id = a.onboarding_session_id
+                AND c.scene = 'onboarding'
+                AND c.step_name IN ('onboarding_headshot_entered','onboarding_headshot_auto_skipped','onboarding_headshot_manual_skipped')
+            )
+          )
+        )
+        QUALIFY
+          CASE
+            WHEN a.utm_regintent = 'aiecho' THEN TRUE
+            ELSE ROW_NUMBER() OVER (PARTITION BY a.onboarding_session_id, step_name_canonical ORDER BY a.`timestamp`) = 1
+          END = TRUE
     )
     SELECT
-        t1.timestamp,
-        t1.user_id,
-        t1.utm_regintent,
-        t1.onboarding_session_id,
-        t1.step_name_canonical AS step_name,
-        t1.step_variant,
-        t1.utm_campaign,
-        t1.context_user_agent,
-        t1.device_category,
-        t3.email as user_email,
+        oe.`timestamp`,
+        COALESCE(oe.user_id, s.user_id) AS user_id,
+        oe.utm_regintent,
+        oe.onboarding_session_id,
+        oe.step_name_canonical AS step_name,
+        oe.step_variant,
+        oe.utm_campaign,
+        oe.context_user_agent,
+        oe.device_category,
+        t3.email AS user_email,
         t4.store_id AS sign_up_user_id,
         t4.created_at AS sign_up_store_created_at,
         t5.url_code AS sign_up_url_code,
         t5.username AS sign_up_user_username,
         t3.email AS sign_up_user_email,
         CASE
-          WHEN t1.utm_campaign IS NOT NULL THEN 'marketing_campaign'
-          WHEN t1.user_id NOT IN (SELECT user_id FROM stores) THEN 'event_not_fired'
+          WHEN oe.utm_campaign IS NOT NULL THEN 'marketing_campaign'
+          WHEN oe.user_id IS NULL THEN 'event_not_fired'
           ELSE 'organic_walk-in'
         END AS acquisition_source,
-        CASE t1.step_name_canonical
-          /*WHEN 'onboarding_started' THEN 1
-          WHEN 'onboarding_intro_video_seen' THEN 2
-          WHEN 'onboarding_ai_echo_intro_seen' THEN 3 */
+        CASE oe.step_name_canonical
           WHEN 'onboarding_ai_echo_prompt_entered' THEN 4
           WHEN 'onboarding_socials_entered' THEN 5
           WHEN 'onboarding_headshot_entered' THEN 6
@@ -47,10 +126,7 @@ view: onboarding_funnel {
           WHEN 'onboarding_auth_verified' THEN 12
           WHEN 'onboarding_complete' THEN 13
         END AS step_ordinality,
-        CASE t1.step_name_canonical
-          /* WHEN 'onboarding_started' THEN 'Onboarding Started'
-          WHEN 'onboarding_intro_video_seen' THEN 'Intro Video Seen'
-          WHEN 'onboarding_ai_echo_intro_seen' THEN 'AI Echo Introduction' */
+        CASE oe.step_name_canonical
           WHEN 'onboarding_ai_echo_prompt_entered' THEN 'AI Echo Prompt Entered'
           WHEN 'onboarding_socials_entered' THEN 'Social Accounts Entered'
           WHEN 'onboarding_headshot_entered' THEN 'Headshot Step Completed'
@@ -62,107 +138,21 @@ view: onboarding_funnel {
           WHEN 'onboarding_auth_verified' THEN 'Account Verified'
           WHEN 'onboarding_complete' THEN 'Onboarding Completed'
         END AS bar_name,
-        CASE t1.step_name_canonical
+        CASE oe.step_name_canonical
           WHEN 'onboarding_headshot_entered' THEN TRUE
           WHEN 'onboarding_niche_entered' THEN TRUE
           WHEN 'onboarding_auth_verified' THEN TRUE
           ELSE FALSE
         END AS is_combined_step,
-        t1.business_type
-      FROM (
-        SELECT
-          a.`timestamp`,
-          a.user_id,
-          a.utm_regintent,
-          a.onboarding_session_id,
-          a.context_campaign_campaign as utm_campaign,
-          a.context_user_agent,
-          CASE
-            /* 1️⃣ Bots & crawlers */
-            WHEN REGEXP_CONTAINS(LOWER(a.context_user_agent), r'(bot|crawler|spider|crawl|slurp|googlebot|bingpreview|facebookexternalhit|twitterbot|linkedinbot|discordbot|telegrambot|google-read-aloud)') THEN 'BOT'
-            /* 2️⃣ In-app browsers / WebViews */
-            WHEN REGEXP_CONTAINS(LOWER(a.context_user_agent), r'(wv|webview|meta-iab|metaiab|facebook|fban|fbav|instagram|iabmv/1|whatsapp|line|linkedinapp|snapchat|gsa/|googleapp/|youtube|tiktok|reddit)') THEN 'WEBVIEW'
-            /* 3️⃣ iOS (real Safari / Chrome iOS) */
-            WHEN REGEXP_CONTAINS(LOWER(a.context_user_agent), r'(iphone|ipad|ipod|cpu iphone os|cpu os)') THEN 'IOS'
-            /* 4️⃣ Android (real Chrome / Samsung Internet) */
-            WHEN REGEXP_CONTAINS(LOWER(a.context_user_agent), r'android') THEN 'ANDROID'
-            /* 5️⃣ Desktop OSes */
-            WHEN REGEXP_CONTAINS(LOWER(a.context_user_agent), r'(windows nt|win64|wow64)') THEN 'WINDOWS_DESKTOP'
-            WHEN REGEXP_CONTAINS(LOWER(a.context_user_agent), r'(macintosh|mac os x)') AND NOT REGEXP_CONTAINS(LOWER(a.context_user_agent), r'(iphone|ipad)') THEN 'MACOS_DESKTOP'
-            WHEN REGEXP_CONTAINS(LOWER(a.context_user_agent), r'(linux|x11)') AND NOT REGEXP_CONTAINS(LOWER(a.context_user_agent), r'android') THEN 'LINUX_DESKTOP'
-            ELSE 'OTHER'
-          END AS device_category,
-          CASE
-            WHEN a.step_name IN ('onboarding_headshot_entered','onboarding_headshot_auto_skipped','onboarding_headshot_manual_skipped') THEN 'onboarding_headshot_entered'
-            WHEN a.step_name IN ('onboarding_niche_entered','onboarding_niche_auto_skipped') THEN 'onboarding_niche_entered'
-            WHEN a.step_name IN ('onboarding_user_otp_verified','onboarding_email_login_verified') THEN 'onboarding_auth_verified'
-            WHEN a.step_name IN ('onboarding_ai_echo_prompt_entered','onboarding_ai_echo_template_selected') THEN 'onboarding_ai_echo_prompt_entered'
-            ELSE a.step_name
-          END AS step_name_canonical,
-          CASE
-            WHEN a.step_name = 'onboarding_headshot_auto_skipped' THEN 'auto_skipped'
-            WHEN a.step_name = 'onboarding_headshot_manual_skipped' THEN 'manual_skipped'
-            WHEN a.step_name = 'onboarding_niche_auto_skipped' THEN 'auto_skipped'
-            WHEN a.step_name = 'onboarding_user_otp_verified' THEN 'otp_verified'
-            WHEN a.step_name = 'onboarding_email_login_verified' THEN 'email_login_verified'
-            ELSE 'completed'
-          END AS step_variant,
-          a.business_type
-        FROM `popshoplive-26f81.popstore.popstore_onboarding_screen_action` a
-        WHERE a.scene = 'onboarding'
-          AND a.step_name IN (
-            /*'onboarding_started',
-            'onboarding_intro_video_seen',
-            'onboarding_ai_echo_intro_seen',*/
-            'onboarding_ai_echo_prompt_entered',
-            'onboarding_ai_echo_template_selected',
-            'onboarding_socials_entered',
-            'onboarding_headshot_entered',
-            'onboarding_headshot_auto_skipped',
-            'onboarding_headshot_manual_skipped',
-            'onboarding_niche_entered',
-            'onboarding_niche_auto_skipped',
-            'onboarding_intent_entered',
-            'onboarding_preview_shown',
-            'onboarding_url_confirmed',
-            'onboarding_contact_info_submitted',
-            'onboarding_user_otp_verified',
-            'onboarding_email_login_verified',
-            'onboarding_complete'
-          )
-          AND {% condition date_range %} a.`timestamp` {% endcondition %}
-          AND {% condition utm_regintent %} a.utm_regintent {% endcondition %}
-          AND {% condition onboarding_session_id %} a.onboarding_session_id {% endcondition %}
-          AND NOT (
-            a.step_name = 'onboarding_niche_auto_skipped'
-            AND (
-              NOT EXISTS (
-                SELECT 1
-                FROM `popshoplive-26f81.popstore.popstore_onboarding_screen_action` b
-                WHERE b.onboarding_session_id = a.onboarding_session_id
-                  AND b.scene = 'onboarding'
-                  AND b.step_name = 'onboarding_socials_entered'
-              )
-              OR NOT EXISTS (
-                SELECT 1
-                FROM `popshoplive-26f81.popstore.popstore_onboarding_screen_action` c
-                WHERE c.onboarding_session_id = a.onboarding_session_id
-                  AND c.scene = 'onboarding'
-                  AND c.step_name IN ('onboarding_headshot_entered','onboarding_headshot_auto_skipped','onboarding_headshot_manual_skipped')
-              )
-            )
-          )
-          QUALIFY
-            CASE
-              WHEN a.utm_regintent = 'aiecho'
-                THEN TRUE
-              ELSE ROW_NUMBER() OVER (PARTITION BY a.onboarding_session_id, step_name_canonical ORDER BY a.`timestamp`) = 1
-            END = TRUE
-      ) AS t1
-      LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_profiles` t2 ON t2.user_id = t1.user_id
-      LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_private_profiles` t3 ON t3.user_id = t1.user_id
-      LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_stores` t4 ON t4.store_id = t1.user_id
-      INNER JOIN `popshoplive-26f81.dbt_popshop.dim_profiles` t5 ON t5.user_id = t1.user_id AND t5.user_type in ('seller', 'verifiedSeller') and t5.apps_pop_store = TRUE
+        oe.business_type
+      FROM stores s
+      LEFT JOIN onboarding_events oe ON oe.user_id = s.user_id
+      LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_profiles` t2 ON t2.user_id = COALESCE(oe.user_id, s.user_id)
+      LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_private_profiles` t3 ON t3.user_id = COALESCE(oe.user_id, s.user_id)
+      LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_stores` t4 ON t4.store_id = COALESCE(oe.user_id, s.user_id)
+      LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_profiles` t5 ON t5.user_id = COALESCE(oe.user_id, s.user_id)
+        AND t5.user_type IN ('seller', 'verifiedSeller')
+        AND t5.apps_pop_store = TRUE
       WHERE (t3.email IS NULL OR (
         LOWER(t3.email) NOT LIKE '%@test.com'
         AND LOWER(t3.email) NOT LIKE '%@example.com'

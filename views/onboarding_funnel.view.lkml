@@ -63,7 +63,7 @@ view: onboarding_funnel {
           a.user_id,
           a.utm_regintent,
           a.onboarding_session_id,
-          a.context_campaign_campaign as utm_campaign,
+          a.utm_campaign,
           a.context_user_agent,
           CASE
             /* 1️⃣ Bots & crawlers */

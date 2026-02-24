@@ -6,55 +6,101 @@ view: onboarding_funnel {
 
   derived_table: {
     sql: SELECT
-      pprof.email as user_email,
-      st.store_id AS sign_up_user_id,
-      st.created_at AS sign_up_store_created_at,
-      prof.url_code AS sign_up_url_code,
-      prof.username AS sign_up_user_username,
-      pprof.email AS sign_up_user_email,
-      oe.marketing_campaign,
-      oe.utm_regintent,
-      oe.business_type,
-      oe.`timestamp`,
-      oe.step_name,
-      oe.onboarding_session_id,
-      CASE
-        WHEN oe.user_id IS NULL THEN 'event_not_fired'
-        WHEN oe.marketing_campaign IS NOT NULL THEN 'marketing_campaign'
-        ELSE 'organic_walk-in'
-      END AS acquisition_source
-    FROM `popshoplive-26f81.dbt_popshop.dim_profiles` prof
-    LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_stores` st ON st.store_id = prof.user_id
-    LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_private_profiles` pprof ON pprof.user_id = prof.user_id
-    LEFT JOIN (
-        SELECT
-          context_campaign_campaign AS marketing_campaign,
-          utm_regintent,
-          business_type,
-          `timestamp`,
-          user_id,
-          scene,
-          step_name,
-          onboarding_session_id
-        FROM `popshoplive-26f81.popstore.popstore_onboarding_screen_action`
-        WHERE (scene = 'onboarding' OR scene IS NULL)
-          AND (step_name = 'onboarding_complete' OR step_name IS NULL)
-          AND {% condition date_range %} `timestamp` {% endcondition %}
-          AND {% condition utm_regintent %} utm_regintent {% endcondition %}
-          AND {% condition onboarding_session_id %} onboarding_session_id {% endcondition %}
-      ) oe
-      ON oe.user_id = prof.user_id
-    WHERE
-      user_type IN ('seller', 'verifiedSeller')
-      AND apps_pop_store = TRUE
-      AND {% condition date_range %} prof.created_at {% endcondition %}
-      AND (pprof.email IS NULL OR (
-        LOWER(pprof.email) NOT LIKE '%@test.com'
-        AND LOWER(pprof.email) NOT LIKE '%@example.com'
-        AND LOWER(pprof.email) NOT LIKE '%@popshoplive.com'
-        AND LOWER(pprof.email) NOT LIKE '%@commentsold.com'
-      ))
-    ORDER BY acquisition_source DESC;;
+  pprof.email AS user_email,
+  st.store_id AS sign_up_user_id,
+  st.created_at AS sign_up_store_created_at,
+  prof.url_code AS sign_up_url_code,
+  prof.username AS sign_up_user_username,
+  pprof.email AS sign_up_user_email,
+
+  oe.user_id AS oe_user_id,
+
+  oe.marketing_campaign,
+  oe.utm_regintent,
+  oe.business_type,
+  oe.`timestamp`,
+  oe.step_name,
+  oe.onboarding_session_id,
+
+  CASE
+    WHEN oe.user_id IS NULL THEN 'event_not_fired'
+    WHEN oe.marketing_campaign IS NOT NULL THEN 'marketing_campaign'
+    ELSE 'organic_walk-in'
+  END AS acquisition_source,
+
+  CASE
+    WHEN oe.user_id IS NULL THEN 'event_not_fired'
+    WHEN NULLIF(oe.marketing_campaign, '') IS NULL THEN 'no_campaign'
+    ELSE oe.marketing_campaign
+  END AS marketing_campaign_display,
+
+  CASE
+    WHEN oe.user_id IS NULL THEN 'event_not_fired'
+    WHEN NULLIF(oe.utm_regintent, '') IS NULL THEN 'no_regintent'
+    ELSE oe.utm_regintent
+  END AS utm_regintent_display,
+
+  CASE
+    WHEN oe.user_id IS NULL THEN 'event_not_fired'
+    WHEN NULLIF(oe.business_type, '') IS NULL THEN 'no_business_type'
+    ELSE oe.business_type
+  END AS business_type_display
+
+FROM `popshoplive-26f81.dbt_popshop.dim_profiles` prof
+LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_stores` st
+  ON st.store_id = prof.user_id
+LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_private_profiles` pprof
+  ON pprof.user_id = prof.user_id
+LEFT JOIN (
+  SELECT
+    context_campaign_campaign AS marketing_campaign,
+    utm_regintent,
+    business_type,
+    `timestamp`,
+    user_id,
+    scene,
+    step_name,
+    onboarding_session_id
+  FROM `popshoplive-26f81.popstore.popstore_onboarding_screen_action`
+  WHERE (scene = 'onboarding' OR scene IS NULL)
+    AND (step_name = 'onboarding_complete' OR step_name IS NULL)
+    AND {% condition date_range %} `timestamp` {% endcondition %}
+    AND {% condition utm_regintent %} utm_regintent {% endcondition %}
+    AND {% condition onboarding_session_id %} onboarding_session_id {% endcondition %}
+) oe
+  ON oe.user_id = prof.user_id
+WHERE
+  user_type IN ('seller', 'verifiedSeller')
+  AND apps_pop_store = TRUE
+  AND {% condition date_range %} prof.created_at {% endcondition %}
+  AND (pprof.email IS NULL OR (
+    LOWER(pprof.email) NOT LIKE '%@test.com'
+    AND LOWER(pprof.email) NOT LIKE '%@example.com'
+    AND LOWER(pprof.email) NOT LIKE '%@popshoplive.com'
+    AND LOWER(pprof.email) NOT LIKE '%@commentsold.com'
+  ))
+ORDER BY acquisition_source DESC
+;;
+  }
+
+  dimension: marketing_campaign_display {
+    type: string
+    sql: ${TABLE}.marketing_campaign_display ;;
+  }
+
+  dimension: utm_regintent_display {
+    type: string
+    sql: ${TABLE}.utm_regintent_display ;;
+  }
+
+  dimension: business_type_display {
+    type: string
+    sql: ${TABLE}.business_type_display ;;
+  }
+
+  dimension: oe_user_id {
+    type: string
+    sql: ${TABLE}.oe_user_id ;;
   }
 
   dimension_group: sign_up_store_created_at {

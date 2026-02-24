@@ -9,8 +9,7 @@ view: onboarding_funnel {
       SELECT
         user_id
       FROM `popshoplive-26f81.dbt_popshop.dim_profiles`
-      WHERE user_type IN ('seller', 'verifiedSeller')
-        AND apps_pop_store = TRUE
+      WHERE {% condition date_range %} created_at {% endcondition %}
     ),
     onboarding_events AS (
       SELECT

@@ -39,9 +39,9 @@ view: onboarding_funnel {
         FROM `popshoplive-26f81.popstore.popstore_onboarding_screen_action`
         WHERE scene = 'onboarding'
           AND step_name = 'onboarding_complete'
-          AND {% condition date_range %} a.`timestamp` {% endcondition %}
-          AND {% condition utm_regintent %} a.utm_regintent {% endcondition %}
-          AND {% condition onboarding_session_id %} a.onboarding_session_id {% endcondition %}
+          AND {% condition date_range %} `timestamp` {% endcondition %}
+          AND {% condition utm_regintent %} utm_regintent {% endcondition %}
+          AND {% condition onboarding_session_id %} onboarding_session_id {% endcondition %}
       ) oe
       ON oe.user_id = prof.user_id
     WHERE

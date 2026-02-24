@@ -16,6 +16,12 @@ view: onboarding_funnel {
         t1.context_user_agent,
         t1.device_category,
         t3.email as user_email,
+        t4.store_id AS sign_up_user_id,
+        t4.created_at AS sign_up_store_created_at,
+        t5.url_code AS sign_up_url_code,
+        t5.username AS sign_up_user_username,
+        t3.email AS sign_up_user_email,
+        t7.url_code as referrer_url_code,
         CASE
           WHEN t1.utm_campaign IS NOT NULL THEN 'marketing_campaign'
           ELSE 'organic_walk-in'
@@ -63,55 +69,21 @@ view: onboarding_funnel {
           a.user_id,
           a.utm_regintent,
           a.onboarding_session_id,
-          a.utm_campaign,
+          a.context_campaign_campaign as utm_campaign,
           a.context_user_agent,
           CASE
             /* 1️⃣ Bots & crawlers */
-            WHEN REGEXP_CONTAINS(
-              LOWER(a.context_user_agent),
-              r'(bot|crawler|spider|crawl|slurp|googlebot|bingpreview|facebookexternalhit|twitterbot|linkedinbot|discordbot|telegrambot|google-read-aloud)'
-            ) THEN 'BOT'
-
+            WHEN REGEXP_CONTAINS(LOWER(a.context_user_agent), r'(bot|crawler|spider|crawl|slurp|googlebot|bingpreview|facebookexternalhit|twitterbot|linkedinbot|discordbot|telegrambot|google-read-aloud)') THEN 'BOT'
             /* 2️⃣ In-app browsers / WebViews */
-            WHEN REGEXP_CONTAINS(
-              LOWER(a.context_user_agent),
-              r'(wv|webview|meta-iab|metaiab|facebook|fban|fbav|instagram|iabmv/1|whatsapp|line|linkedinapp|snapchat|gsa/|googleapp/|youtube|tiktok|reddit)'
-            ) THEN 'WEBVIEW'
-
+            WHEN REGEXP_CONTAINS(LOWER(a.context_user_agent), r'(wv|webview|meta-iab|metaiab|facebook|fban|fbav|instagram|iabmv/1|whatsapp|line|linkedinapp|snapchat|gsa/|googleapp/|youtube|tiktok|reddit)') THEN 'WEBVIEW'
             /* 3️⃣ iOS (real Safari / Chrome iOS) */
-            WHEN REGEXP_CONTAINS(
-              LOWER(a.context_user_agent),
-              r'(iphone|ipad|ipod|cpu iphone os|cpu os)'
-            ) THEN 'IOS'
-
+            WHEN REGEXP_CONTAINS(LOWER(a.context_user_agent), r'(iphone|ipad|ipod|cpu iphone os|cpu os)') THEN 'IOS'
             /* 4️⃣ Android (real Chrome / Samsung Internet) */
-            WHEN REGEXP_CONTAINS(
-              LOWER(a.context_user_agent),
-              r'android'
-            ) THEN 'ANDROID'
-
+            WHEN REGEXP_CONTAINS(LOWER(a.context_user_agent), r'android') THEN 'ANDROID'
             /* 5️⃣ Desktop OSes */
-            WHEN REGEXP_CONTAINS(
-              LOWER(a.context_user_agent),
-              r'(windows nt|win64|wow64)'
-            ) THEN 'WINDOWS_DESKTOP'
-
-            WHEN REGEXP_CONTAINS(
-              LOWER(a.context_user_agent),
-              r'(macintosh|mac os x)'
-            ) AND NOT REGEXP_CONTAINS(
-              LOWER(a.context_user_agent),
-              r'(iphone|ipad)'
-            ) THEN 'MACOS_DESKTOP'
-
-            WHEN REGEXP_CONTAINS(
-              LOWER(a.context_user_agent),
-              r'(linux|x11)'
-            ) AND NOT REGEXP_CONTAINS(
-              LOWER(a.context_user_agent),
-              r'android'
-            ) THEN 'LINUX_DESKTOP'
-
+            WHEN REGEXP_CONTAINS(LOWER(a.context_user_agent), r'(windows nt|win64|wow64)') THEN 'WINDOWS_DESKTOP'
+            WHEN REGEXP_CONTAINS(LOWER(a.context_user_agent), r'(macintosh|mac os x)') AND NOT REGEXP_CONTAINS(LOWER(a.context_user_agent), r'(iphone|ipad)') THEN 'MACOS_DESKTOP'
+            WHEN REGEXP_CONTAINS(LOWER(a.context_user_agent), r'(linux|x11)') AND NOT REGEXP_CONTAINS(LOWER(a.context_user_agent), r'android') THEN 'LINUX_DESKTOP'
             ELSE 'OTHER'
           END AS device_category,
           CASE
@@ -183,6 +155,9 @@ view: onboarding_funnel {
       ) AS t1
       LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_profiles` t2 ON t2.user_id = t1.user_id
       LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_private_profiles` t3 ON t3.user_id = t1.user_id
+      LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_stores` t4 ON t4.store_id = t1.user_id
+      INNER JOIN `popshoplive-26f81.dbt_popshop.dim_profiles` t5 ON t5.user_id = t1.user_id AND t5.user_type in ('seller', 'verifiedSeller') and t5.apps_pop_store = TRUE
+      LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_profiles` t7 ON t7.presentee_user_id = t1.user_id
       WHERE (t3.email IS NULL OR (
         LOWER(t3.email) NOT LIKE '%@test.com'
         AND LOWER(t3.email) NOT LIKE '%@example.com'
@@ -273,6 +248,33 @@ view: onboarding_funnel {
     timeframes: [time, date, week, month, quarter, year]
   }
 
+  dimension: sign_up_user_id {
+    type: string
+    primary_key: yes
+    sql: ${TABLE}.sign_up_user_id ;;
+  }
+
+  dimension_group: sign_up_store_created_at {
+    type: time
+    convert_tz: no
+    sql: ${TABLE}.sign_up_store_created_at ;;
+  }
+
+  dimension: sign_up_user_url {
+    type: string
+    sql: 'https://pop.store/' || ${TABLE}.sign_up_url_code ;;
+  }
+
+  dimension: referrer_url {
+    type: string
+    sql: 'https://pop.store/' || ${TABLE}.referrer_url_code  ;;
+  }
+
+  dimension: sign_up_user_email {
+    type: string
+    sql: ${TABLE}.sign_up_user_email ;;
+  }
+
   measure: count {
     type: count
     drill_fields: [detail*]
@@ -295,12 +297,14 @@ view: onboarding_funnel {
 
   set: onboarding_details {
     fields: [
-      timestamp_time,
-      user_id,
-      user_email,
+      sign_up_store_created_at_time,
+      sign_up_user_id,
+      sign_up_user_url,
+      sign_up_user_email,
       acquisition_source,
+      referrer_url,
       utm_campaign,
-      utm_regintent
+      utm_regintent,
     ]
   }
 

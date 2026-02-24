@@ -15,6 +15,7 @@ view: onboarding_funnel {
         t1.utm_campaign,
         t1.context_user_agent,
         t1.device_category,
+        t3.email as user_email,
         CASE
           WHEN t1.utm_campaign IS NOT NULL THEN 'marketing_campaign'
           ELSE 'organic_walk-in'
@@ -62,7 +63,7 @@ view: onboarding_funnel {
           a.user_id,
           a.utm_regintent,
           a.onboarding_session_id,
-          a.utm_campaign,
+          a.context_campaign_campaign as utm_campaign,
           a.context_user_agent,
           CASE
             /* 1️⃣ Bots & crawlers */
@@ -261,6 +262,11 @@ view: onboarding_funnel {
     sql: ${TABLE}.device_category ;;
   }
 
+  dimension: user_email {
+    type: string
+    sql: ${TABLE}.user_email ;;
+  }
+
   dimension_group: timestamp {
     type: time
     sql: ${TABLE}.timestamp ;;
@@ -276,7 +282,7 @@ view: onboarding_funnel {
   measure: count_onboarding_complete {
     type: count
     filters: [step_name: "onboarding_complete"]
-    drill_fields: [detail*]
+    drill_fields: [onboarding_details*]
   }
 
   measure: count_distinct_sessions {
@@ -285,6 +291,17 @@ view: onboarding_funnel {
     value_format_name: decimal_0
     drill_fields: [detail*]
     description: "Unique onboarding sessions per step. Use for funnel; pre-signup steps typically have NULL user_id."
+  }
+
+  set: onboarding_details {
+    fields: [
+      timestamp_time,
+      user_id,
+      user_email,
+      acquisition_source,
+      utm_campaign,
+      utm_regintent
+    ]
   }
 
   set: detail {

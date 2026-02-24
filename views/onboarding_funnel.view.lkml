@@ -9,7 +9,7 @@ view: onboarding_funnel {
       SELECT
         user_id
       FROM `popshoplive-26f81.dbt_popshop.dim_profiles`
-      WHERE {% condition date_range %} a.`created_at` {% endcondition %}
+      WHERE {% condition date_range %} created_at {% endcondition %}
     )
     SELECT
         t1.timestamp,

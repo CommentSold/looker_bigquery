@@ -63,7 +63,7 @@ view: onboarding_funnel {
           'onboarding_email_login_verified',
           'onboarding_complete'
         )
-        /* AND {% condition date_range %} a.`timestamp` {% endcondition %} */
+        /*AND {% condition date_range %} a.`timestamp` {% endcondition %}
         AND {% condition utm_regintent %} a.utm_regintent {% endcondition %}
         AND {% condition onboarding_session_id %} a.onboarding_session_id {% endcondition %}
         AND NOT (
@@ -89,7 +89,7 @@ view: onboarding_funnel {
           CASE
             WHEN a.utm_regintent = 'aiecho' THEN TRUE
             ELSE ROW_NUMBER() OVER (PARTITION BY a.onboarding_session_id, step_name_canonical ORDER BY a.`timestamp`) = 1
-          END = TRUE
+          END = TRUE*/
     )
     SELECT
       pprof.email as user_email,
@@ -118,15 +118,13 @@ view: onboarding_funnel {
     WHERE
       user_type IN ('seller', 'verifiedSeller')
       AND apps_pop_store = TRUE
-      /* AND {% condition date_range %} prof.created_at {% endcondition %} */
-      AND prof.created_at >= '2026-02-24'
+      AND {% condition date_range %} prof.created_at {% endcondition %}
       AND (pprof.email IS NULL OR (
         LOWER(pprof.email) NOT LIKE '%@test.com'
         AND LOWER(pprof.email) NOT LIKE '%@example.com'
         AND LOWER(pprof.email) NOT LIKE '%@popshoplive.com'
         AND LOWER(pprof.email) NOT LIKE '%@commentsold.com'
-      ))
-    ORDER BY acquisition_source DESC;;
+      ));;
   }
 
   dimension_group: sign_up_store_created_at {

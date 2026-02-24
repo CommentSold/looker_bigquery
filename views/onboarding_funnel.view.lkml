@@ -16,8 +16,8 @@ view: onboarding_funnel {
       oe.utm_regintent,
       oe.business_type,
       oe.`timestamp`,
-      oe.step_name_canonical AS step_name,
-      oe.onboarding_session_id
+      oe.step_name,
+      oe.onboarding_session_id,
       CASE
         WHEN oe.marketing_campaign IS NOT NULL THEN 'marketing_campaign'
         WHEN oe.user_id IS NULL THEN 'event_not_fired'

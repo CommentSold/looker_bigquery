@@ -19,8 +19,8 @@ view: onboarding_funnel {
       oe.step_name,
       oe.onboarding_session_id,
       CASE
-        WHEN oe.marketing_campaign IS NOT NULL THEN 'marketing_campaign'
         WHEN oe.user_id IS NULL THEN 'event_not_fired'
+        WHEN oe.marketing_campaign IS NOT NULL THEN 'marketing_campaign'
         ELSE 'organic_walk-in'
       END AS acquisition_source
     FROM `popshoplive-26f81.dbt_popshop.dim_profiles` prof
@@ -37,8 +37,8 @@ view: onboarding_funnel {
           step_name,
           onboarding_session_id
         FROM `popshoplive-26f81.popstore.popstore_onboarding_screen_action`
-        WHERE scene = 'onboarding'
-          AND step_name = 'onboarding_complete'
+        WHERE (scene = 'onboarding' OR scene IS NULL)
+          AND (step_name = 'onboarding_complete' OR step_name IS NULL)
           AND {% condition date_range %} `timestamp` {% endcondition %}
           AND {% condition utm_regintent %} utm_regintent {% endcondition %}
           AND {% condition onboarding_session_id %} onboarding_session_id {% endcondition %}

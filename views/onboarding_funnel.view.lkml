@@ -5,7 +5,13 @@ view: onboarding_funnel {
   }
 
   derived_table: {
-    sql: SELECT
+    sql: WITH stores AS (
+      SELECT
+        user_id
+      FROM `popshoplive-26f81.dbt_popshop.dim_profiles`
+      WHERE {% condition date_range %} a.`created_at` {% endcondition %}
+    )
+    SELECT
         t1.timestamp,
         t1.user_id,
         t1.utm_regintent,
@@ -23,6 +29,7 @@ view: onboarding_funnel {
         t3.email AS sign_up_user_email,
         CASE
           WHEN t1.utm_campaign IS NOT NULL THEN 'marketing_campaign'
+          WHEN t1.user_id NOT IN (SELECT user_id FROM stores) THEN 'event_not_fired'
           ELSE 'organic_walk-in'
         END AS acquisition_source,
         CASE t1.step_name_canonical

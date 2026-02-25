@@ -41,8 +41,8 @@ view: onboarding_steps_funnel {
         END AS step_variant,
         a.business_type
       FROM `popshoplive-26f81.popstore.popstore_onboarding_screen_action` a
-      WHERE (a.scene = 'onboarding' OR a.scene IS NULL)
-      AND (a.step_name IN (
+      WHERE a.scene = 'onboarding'
+      AND a.step_name IN (
         /*'onboarding_started',
         'onboarding_intro_video_seen',
         'onboarding_ai_echo_intro_seen',*/
@@ -61,7 +61,7 @@ view: onboarding_steps_funnel {
         'onboarding_user_otp_verified',
         'onboarding_email_login_verified',
         'onboarding_complete'
-      ) OR a.step_name IS NULL)
+      )
       AND {% condition date_range %} a.`timestamp` {% endcondition %}
       AND {% condition utm_regintent %} a.utm_regintent {% endcondition %}
       AND {% condition onboarding_session_id %} a.onboarding_session_id {% endcondition %}
@@ -84,7 +84,11 @@ view: onboarding_steps_funnel {
           )
         )
       )
-      QUALIFY ROW_NUMBER() OVER (PARTITION BY a.anonymous_id ORDER BY a.`timestamp`) = 1
+      QUALIFY
+        CASE
+          WHEN a.utm_regintent = 'aiecho' THEN TRUE
+          ELSE ROW_NUMBER() OVER (PARTITION BY a.onboarding_session_id, step_name_canonical ORDER BY a.`timestamp`) = 1
+        END = TRUE
     )
     SELECT
       t1.timestamp,
@@ -239,7 +243,7 @@ view: onboarding_steps_funnel {
 
   measure: count_distinct_sessions {
     type: count_distinct
-    sql: ${anonymous_id} ;;
+    sql: ${onboarding_session_id} ;;
     value_format_name: decimal_0
     drill_fields: [detail*]
     description: "Unique onboarding sessions per step. Use for funnel; pre-signup steps typically have NULL user_id."

@@ -84,11 +84,7 @@ view: onboarding_steps_funnel {
           )
         )
       )
-      QUALIFY
-        CASE
-          WHEN a.utm_regintent = 'aiecho' THEN ROW_NUMBER() OVER (PARTITION BY a.anonymous_id ORDER BY a.`timestamp`) = 1
-          ELSE ROW_NUMBER() OVER (PARTITION BY a.anonymous_id, step_name_canonical ORDER BY a.`timestamp`) = 1
-        END = TRUE
+      QUALIFY ROW_NUMBER() OVER (PARTITION BY a.anonymous_id ORDER BY a.`timestamp`) = 1
     )
     SELECT
       t1.timestamp,

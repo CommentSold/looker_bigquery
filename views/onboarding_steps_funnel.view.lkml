@@ -41,8 +41,8 @@ view: onboarding_steps_funnel {
         END AS step_variant,
         a.business_type
       FROM `popshoplive-26f81.popstore.popstore_onboarding_screen_action` a
-      WHERE a.scene = 'onboarding'
-      AND a.step_name IN (
+      WHERE (a.scene = 'onboarding' OR a.scene IS NULL)
+      AND (a.step_name IN (
         /*'onboarding_started',
         'onboarding_intro_video_seen',
         'onboarding_ai_echo_intro_seen',*/
@@ -61,7 +61,7 @@ view: onboarding_steps_funnel {
         'onboarding_user_otp_verified',
         'onboarding_email_login_verified',
         'onboarding_complete'
-      )
+      ) OR a.step_name IS NULL)
       AND {% condition date_range %} a.`timestamp` {% endcondition %}
       AND {% condition utm_regintent %} a.utm_regintent {% endcondition %}
       AND {% condition onboarding_session_id %} a.onboarding_session_id {% endcondition %}
@@ -86,8 +86,8 @@ view: onboarding_steps_funnel {
       )
       QUALIFY
         CASE
-          WHEN a.utm_regintent = 'aiecho' THEN TRUE
-          ELSE ROW_NUMBER() OVER (PARTITION BY a.onboarding_session_id, step_name_canonical ORDER BY a.`timestamp`) = 1
+          WHEN a.utm_regintent = 'aiecho' THEN ROW_NUMBER() OVER (PARTITION BY a.anonymous_id ORDER BY a.`timestamp`) = 1
+          ELSE ROW_NUMBER() OVER (PARTITION BY a.anonymous_id, step_name_canonical ORDER BY a.`timestamp`) = 1
         END = TRUE
     )
     SELECT
@@ -241,12 +241,6 @@ view: onboarding_steps_funnel {
     description: "Event count per step. Use count_distinct_sessions for unique sessions (funnel)."
   }
 
-  measure: count_onboarding_complete {
-    type: count
-    filters: [step_name: "onboarding_complete"]
-    drill_fields: [detail*]
-  }
-
   measure: count_distinct_sessions {
     type: count_distinct
     sql: ${anonymous_id} ;;
@@ -257,20 +251,15 @@ view: onboarding_steps_funnel {
 
   set: detail {
     fields: [
-      step_name,
-      bar_name,
-      step_variant,
-      step_ordinality,
-      acquisition_source,
-      is_combined_step,
-      user_id,
-      anonymous_id,
-      utm_regintent,
-      onboarding_session_id,
-      business_type,
       timestamp_time,
+      anonymous_id,
+      user_id,
+      onboarding_session_id,
+      step_name,
+      step_variant,
+      acquisition_source,
+      utm_regintent,
       utm_campaign,
-      context_user_agent,
       device_category
     ]
   }

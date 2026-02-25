@@ -249,7 +249,7 @@ view: onboarding_steps_funnel {
 
   measure: count_distinct_sessions {
     type: count_distinct
-    sql: ${onboarding_session_id} ;;
+    sql: ${anonymous_id} ;;
     value_format_name: decimal_0
     drill_fields: [detail*]
     description: "Unique onboarding sessions per step. Use for funnel; pre-signup steps typically have NULL user_id."

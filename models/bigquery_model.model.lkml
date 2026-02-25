@@ -7,7 +7,9 @@ include: "/views/*.view.lkml"                # include all views in the views/ f
 # # Select the views that should be a part of this model,
 # # and define the joins that connect them together.
 #
-explore: popstore_onboarding_screen_action {
+explore: onboarding_steps_funnel {
+  label: "Onboarding Steps Funnel"
+  group_label: "Onboarding"
 }
 explore: onboarding_funnel {
   label: "Onboarding Funnel"

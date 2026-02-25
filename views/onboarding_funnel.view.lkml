@@ -5,7 +5,24 @@ view: onboarding_funnel {
   }
 
   derived_table: {
-    sql: SELECT
+    sql: WITH onboarding_events AS (
+      SELECT
+        context_campaign_campaign AS marketing_campaign,
+        utm_regintent,
+        business_type,
+        `timestamp`,
+        user_id,
+        scene,
+        step_name,
+        onboarding_session_id
+      FROM `popshoplive-26f81.popstore.popstore_onboarding_screen_action`
+      WHERE (scene = 'onboarding' OR scene IS NULL)
+        AND (step_name = 'onboarding_complete' OR step_name IS NULL)
+        AND {% condition date_range %} `timestamp` {% endcondition %}
+        AND {% condition utm_regintent %} utm_regintent {% endcondition %}
+        AND {% condition onboarding_session_id %} onboarding_session_id {% endcondition %}
+    )
+    SELECT
       pprof.email as user_email,
       st.store_id AS sign_up_user_id,
       st.created_at AS sign_up_store_created_at,
@@ -26,24 +43,7 @@ view: onboarding_funnel {
     FROM `popshoplive-26f81.dbt_popshop.dim_profiles` prof
     LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_stores` st ON st.store_id = prof.user_id
     LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_private_profiles` pprof ON pprof.user_id = prof.user_id
-    LEFT JOIN (
-        SELECT
-          context_campaign_campaign AS marketing_campaign,
-          utm_regintent,
-          business_type,
-          `timestamp`,
-          user_id,
-          scene,
-          step_name,
-          onboarding_session_id
-        FROM `popshoplive-26f81.popstore.popstore_onboarding_screen_action`
-        WHERE (scene = 'onboarding' OR scene IS NULL)
-          AND (step_name = 'onboarding_complete' OR step_name IS NULL)
-          AND {% condition date_range %} `timestamp` {% endcondition %}
-          AND {% condition utm_regintent %} utm_regintent {% endcondition %}
-          AND {% condition onboarding_session_id %} onboarding_session_id {% endcondition %}
-      ) oe
-      ON oe.user_id = prof.user_id
+    LEFT JOIN onboarding_events oe ON oe.user_id = prof.user_id
     WHERE
       user_type IN ('seller', 'verifiedSeller')
       AND apps_pop_store = TRUE

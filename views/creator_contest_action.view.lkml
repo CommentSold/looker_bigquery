@@ -26,8 +26,8 @@ view: creator_contest_action {
           'contest_stage3_entered',
           'contest_stage4_entered'
         )
-        AND {% condition date_range %} cca.`timestamp` {% endcondition %}
-      ORDER BY cca.`timestamp` DESC;;
+        AND {% condition date_range %} cca.loaded_at {% endcondition %}
+      ORDER BY cca.loaded_at DESC;;
   }
 
   dimension_group: creator_contest_created_at {

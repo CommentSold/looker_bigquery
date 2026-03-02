@@ -91,16 +91,15 @@ view: creator_contest_action {
 
   set: creator_contest_details {
     fields: [
-      creator_contest_created_at_time,
       loaded_at_time,
-      anonymous_id,
       user_id,
-      step_name,
-      business_type,
-      stage,
+      url_code,
       user_name,
       user_email,
-      url_code
+      stage,
+      step_name,
+      business_type,
+      anonymous_id,
     ]
   }
 }

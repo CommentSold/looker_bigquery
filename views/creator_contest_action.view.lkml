@@ -43,8 +43,8 @@ view: creator_contest_action {
     sql: ${TABLE}.stage;;
   }
 
-  dimension: total_events {
-    type: string
+  measure: total_events {
+    type: sum
     sql: ${TABLE}.total_events ;;
   }
 

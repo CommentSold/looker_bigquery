@@ -15,3 +15,7 @@ explore: onboarding_funnel {
   label: "Onboarding Funnel"
   group_label: "Onboarding"
 }
+explore: creator_contest_action {
+  label: "Creator Contest Action"
+  group_label: "Contest"
+}

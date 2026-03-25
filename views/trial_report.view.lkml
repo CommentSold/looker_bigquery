@@ -56,8 +56,24 @@ view: trial_report {
     sql: ${TABLE}.total_ended_trials ;;
   }
 
-  measure: count_trials {
-    type: count
+  measure: sum_total_trials {
+    type: sum
+    sql: ${TABLE}.total_trials ;;
+    label: "Total Trials"
+    drill_fields: [onboarding_details*]
+  }
+
+  measure: sum_total_active_trials {
+    type: sum
+    sql: ${TABLE}.total_active_trials ;;
+    label: "Active Trials"
+    drill_fields: [onboarding_details*]
+  }
+
+  measure: sum_total_ended_trials {
+    type: sum
+    sql: ${TABLE}.total_ended_trials ;;
+    label: "Ended Trials"
     drill_fields: [onboarding_details*]
   }
 

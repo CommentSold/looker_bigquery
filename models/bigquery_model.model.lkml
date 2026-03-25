@@ -19,3 +19,7 @@ explore: creator_contest_action {
   label: "Creator Contest Action"
   group_label: "Contest"
 }
+explore: trial_report {
+  label: "Trial Report"
+  group_label: "Trial"
+}

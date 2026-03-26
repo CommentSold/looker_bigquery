@@ -6,58 +6,30 @@ view: trial_report {
 
   derived_table: {
     sql:
-      WITH base AS (
-        SELECT
-          id,
-          current_period_start AS start_date,
-          trial_end AS end_date,
-          COUNT(*) AS total_trials,
-          COUNT(CASE WHEN DATE(trial_end) <= CURRENT_DATE() THEN 1 END) AS total_ended_trials,
-          COUNT(CASE WHEN DATE(trial_end) > CURRENT_DATE() THEN 1 END) AS total_active_trials
-        FROM dbt_popshop.fact_seller_subscription
-        WHERE
-          trial_end IS NOT NULL
-          AND {% condition date_range %} TIMESTAMP(current_period_start) {% endcondition %}
-        GROUP BY 1, 2, 3
-      ),
-      detail AS (
-        SELECT
-          t1.id,
-          t1.status,
-          t1.subscription_id,
-          t1.user_id,
-          CASE
-            WHEN t1.discounted_price IS NULL THEN (t1.price + t1.tax_amount)
-            ELSE t1.discounted_price
-          END AS price,
-          JSON_EXTRACT_SCALAR(plan, '$.productName') AS plan_name,
-          JSON_EXTRACT_SCALAR(plan, '$.interval') AS plan_interval,
-          CASE
-            WHEN t1.trial_end IS NULL THEN 'No trial'
-            WHEN DATE(t1.trial_end) < CURRENT_DATE() THEN 'Trial ended'
-            ELSE 'Trialing'
-          END AS trial_status,
-          t1.trial_end
-        FROM dbt_popshop.fact_seller_subscription t1,
-        UNNEST(t1.plans) AS plan
-      )
       SELECT
-        b.id,
-        b.start_date,
-        b.end_date,
-        b.total_trials,
-        b.total_ended_trials,
-        b.total_active_trials,
-        d.status,
-        d.subscription_id,
-        d.user_id,
-        d.price,
-        d.plan_name,
-        d.plan_interval,
-        d.trial_status,
-        d.trial_end
-      FROM base b
-      LEFT JOIN detail d ON b.id = d.id;;
+        t1.id,
+        t1.current_period_start AS start_date,
+        t1.trial_end AS end_date,
+        t1.subscription_id,
+        t1.user_id,
+        CASE
+          WHEN t1.discounted_price IS NULL THEN (t1.price + t1.tax_amount)
+          ELSE t1.discounted_price
+        END AS price,
+        JSON_EXTRACT_SCALAR(plan, '$.productName') AS plan_name,
+        JSON_EXTRACT_SCALAR(plan, '$.interval') AS plan_interval,
+        CASE
+          WHEN t1.trial_end IS NULL THEN 'No trial'
+          WHEN DATE(t1.trial_end) < CURRENT_DATE() THEN 'Trial ended'
+          ELSE 'Trialing'
+        END AS trial_status
+      FROM dbt_popshop.fact_seller_subscription t1,
+      UNNEST(t1.plans) AS plan
+      WHERE
+        t1.trial_end IS NOT NULL
+        AND JSON_EXTRACT_SCALAR(plan, '$.planType') = 'plan'
+        AND {% condition date_range %} TIMESTAMP(t1.current_period_start) {% endcondition %}
+      ORDER BY t1.created_at DESC;;
   }
 
   dimension: id {
@@ -71,14 +43,14 @@ view: trial_report {
     type: time
     convert_tz: no
     sql: ${TABLE}.start_date ;;
-    timeframes: [time, date, week, month, quarter, year]
+    timeframes: [date, week, month, quarter, year]
   }
 
   dimension_group: end_date_at {
     type: time
     convert_tz: no
     sql: ${TABLE}.end_date ;;
-    timeframes: [time, date, week, month, quarter, year]
+    timeframes: [date, week, month, quarter, year]
   }
 
   dimension: subscription_id {
@@ -89,11 +61,6 @@ view: trial_report {
   dimension: user_id {
     type: string
     sql: ${TABLE}.user_id ;;
-  }
-
-  dimension: status {
-    type: string
-    sql: ${TABLE}.status ;;
   }
 
   dimension: price {
@@ -118,44 +85,35 @@ view: trial_report {
     sql: ${TABLE}.trial_status ;;
   }
 
-  dimension_group: trial_end_at {
-    type: time
-    convert_tz: no
-    sql: ${TABLE}.trial_end ;;
-    timeframes: [date]
-  }
-
   measure: sum_total_trials {
-    type: sum
-    sql: ${TABLE}.total_trials ;;
+    type: count_distinct
+    sql: ${id} ;;
     label: "Total Trials"
     drill_fields: [onboarding_details*]
   }
 
   measure: sum_total_active_trials {
-    type: sum
-    sql: ${TABLE}.total_active_trials ;;
+    type: count_distinct
+    sql: CASE WHEN ${trial_status} = 'Trialing' THEN ${id} END ;;
     label: "Active Trials"
     drill_fields: [onboarding_details*]
   }
 
   measure: sum_total_ended_trials {
-    type: sum
-    sql: ${TABLE}.total_ended_trials ;;
+    type: count_distinct
+    sql: CASE WHEN ${trial_status} = 'Trial ended' THEN ${id} END ;;
     label: "Ended Trials"
     drill_fields: [onboarding_details*]
   }
 
   set: onboarding_details {
     fields: [
-      subscription_id,
       user_id,
-      status,
-      price,
+      subscription_id,
       plan_name,
       plan_interval,
+      price,
       trial_status,
-      trial_end_at_date,
       start_date_at_date,
       end_date_at_date
     ]

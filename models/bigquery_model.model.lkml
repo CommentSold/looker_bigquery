@@ -23,7 +23,7 @@ explore: trial_report {
   label: "Trial Report"
   group_label: "Trial"
   join: trial_detail {
-    sql_on: ${trial_report.report_month_at_month} = ${trial_detail.report_month_at_month} ;;
+    sql_on: DATE(${trial_report.report_month_at_month}) = DATE(${trial_detail.report_month_at_month}) ;;
     relationship: many_to_one
     type: left_outer
   }

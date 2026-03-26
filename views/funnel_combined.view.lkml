@@ -6,58 +6,63 @@ view: funnel_combined {
 
   derived_table: {
     sql: WITH base_acquisition AS (
-      SELECT
-        DATE(st.created_at) AS event_date,
-        'Acquisition' AS stage,
-        CASE
-          WHEN oe.user_id IS NULL THEN 'event_not_fired'
-          WHEN oe.context_campaign_campaign IS NOT NULL THEN 'marketing_campaign'
-          ELSE 'organic_walk-in'
-        END AS acquisition_source,
-        COUNT(DISTINCT st.store_id) AS value
-      FROM `popshoplive-26f81.dbt_popshop.dim_profiles` prof
-      LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_stores` st
-        ON st.store_id = prof.user_id
-      LEFT JOIN `popshoplive-26f81.popstore.popstore_onboarding_screen_action` oe
-        ON oe.user_id = prof.user_id
-      WHERE
-        user_type IN ('seller', 'verifiedSeller')
-        AND apps_pop_store = TRUE
-      GROUP BY 1,2,3
-    ),
+        SELECT
+          DATE(st.created_at) AS event_date,
+          'Acquisition' AS stage,
+          CASE
+            WHEN oe.user_id IS NULL THEN 'event_not_fired'
+            WHEN oe.context_campaign_campaign IS NOT NULL THEN 'marketing_campaign'
+            ELSE 'organic_walk-in'
+          END AS acquisition_source,
+          COUNT(DISTINCT st.store_id) AS value
+        FROM `popshoplive-26f81.dbt_popshop.dim_profiles` prof
+        LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_stores` st
+          ON st.store_id = prof.user_id
+        LEFT JOIN `popshoplive-26f81.popstore.popstore_onboarding_screen_action` oe
+          ON oe.user_id = prof.user_id
+        WHERE
+          user_type IN ('seller', 'verifiedSeller')
+          AND apps_pop_store = TRUE
+          AND {% condition date_range %} st.created_at {% endcondition %}
+        GROUP BY 1,2,3
+      ),
 
       base_trials_started AS (
-      SELECT
-      DATE(t1.current_period_start) AS event_date,
-      'Trials Started' AS stage,
-      CASE
-      WHEN oe.user_id IS NULL THEN 'event_not_fired'
-      WHEN oe.context_campaign_campaign IS NOT NULL THEN 'marketing_campaign'
-      ELSE 'organic_walk-in'
-      END AS acquisition_source,
-      COUNT(DISTINCT t1.id) AS value
-      FROM `popshoplive-26f81.dbt_popshop.fact_seller_subscription` t1
-      LEFT JOIN `popshoplive-26f81.popstore.popstore_onboarding_screen_action` oe
-      ON oe.user_id = t1.user_id
-      WHERE t1.trial_end IS NOT NULL
-      GROUP BY 1,2,3
+        SELECT
+          DATE(t1.current_period_start) AS event_date,
+          'Trials Started' AS stage,
+          CASE
+            WHEN oe.user_id IS NULL THEN 'event_not_fired'
+            WHEN oe.context_campaign_campaign IS NOT NULL THEN 'marketing_campaign'
+            ELSE 'organic_walk-in'
+          END AS acquisition_source,
+          COUNT(DISTINCT t1.id) AS value
+        FROM `popshoplive-26f81.dbt_popshop.fact_seller_subscription` t1
+        LEFT JOIN `popshoplive-26f81.popstore.popstore_onboarding_screen_action` oe
+          ON oe.user_id = t1.user_id
+        WHERE
+          t1.trial_end IS NOT NULL
+          AND {% condition date_range %} t1.current_period_start {% endcondition %}
+        GROUP BY 1,2,3
       ),
 
       base_trials_ended AS (
-      SELECT
-      DATE(t1.trial_end) AS event_date,
-      'Trials Ended' AS stage,
-      CASE
-      WHEN oe.user_id IS NULL THEN 'event_not_fired'
-      WHEN oe.context_campaign_campaign IS NOT NULL THEN 'marketing_campaign'
-      ELSE 'organic_walk-in'
-      END AS acquisition_source,
-      COUNT(DISTINCT t1.id) AS value
-      FROM `popshoplive-26f81.dbt_popshop.fact_seller_subscription` t1
-      LEFT JOIN `popshoplive-26f81.popstore.popstore_onboarding_screen_action` oe
-      ON oe.user_id = t1.user_id
-      WHERE t1.trial_end IS NOT NULL
-      GROUP BY 1,2,3
+        SELECT
+          DATE(t1.trial_end) AS event_date,
+          'Trials Ended' AS stage,
+          CASE
+            WHEN oe.user_id IS NULL THEN 'event_not_fired'
+            WHEN oe.context_campaign_campaign IS NOT NULL THEN 'marketing_campaign'
+            ELSE 'organic_walk-in'
+          END AS acquisition_source,
+          COUNT(DISTINCT t1.id) AS value
+        FROM `popshoplive-26f81.dbt_popshop.fact_seller_subscription` t1
+        LEFT JOIN `popshoplive-26f81.popstore.popstore_onboarding_screen_action` oe
+          ON oe.user_id = t1.user_id
+        WHERE
+          t1.trial_end IS NOT NULL
+          AND {% condition date_range %} t1.trial_end {% endcondition %}
+        GROUP BY 1,2,3
       )
 
       SELECT * FROM base_acquisition

@@ -87,8 +87,7 @@ view: trial_detail {
         trial_end
       FROM dbt_popshop.fact_seller_subscription t1,
       UNNEST(t1.plans) AS plan
-      WHERE trial_end IS NOT NULL
-      AND {% condition trial_report.date_range %} current_period_start {% endcondition %};;
+      WHERE trial_end IS NOT NULL;;
   }
 
   dimension_group: report_month_at {

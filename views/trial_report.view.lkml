@@ -19,8 +19,8 @@ view: trial_report {
           ELSE 'organic_walk-in'
         END AS acquisition_source,
         t1.id,
-        t1.current_period_start AS start_date,
-        t1.trial_end AS end_date,
+        t1.current_period_start AS trial_starts,
+        t1.trial_end AS trial_ends,
         t1.subscription_id,
         t1.user_id,
         CASE
@@ -31,9 +31,14 @@ view: trial_report {
         JSON_EXTRACT_SCALAR(plan, '$.interval') AS plan_interval,
         CASE
           WHEN t1.trial_end IS NULL THEN 'No trial'
-          WHEN DATE(t1.trial_end) < CURRENT_DATE() THEN 'Trial Ended'
-          ELSE 'Trial Started'
+          WHEN DATE(t1.trial_end) < CURRENT_DATE() THEN 'Ended'
+          ELSE 'Started'
         END AS trial_status
+        CASE
+          WHEN t1.trial_end IS NULL THEN 3
+          WHEN DATE(t1.trial_end) < CURRENT_DATE() THEN 2
+          ELSE 1
+        END AS trial_type
       FROM dbt_popshop.fact_seller_subscription t1,
       UNNEST(t1.plans) AS plan
       LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_profiles` prof ON prof.user_id = t1.user_id
@@ -43,6 +48,12 @@ view: trial_report {
         t1.trial_end IS NOT NULL
         AND JSON_EXTRACT_SCALAR(plan, '$.planType') = 'plan'
         AND {% condition date_range %} TIMESTAMP(t1.current_period_start) {% endcondition %}
+        AND (pprof.email IS NULL OR (
+          LOWER(pprof.email) NOT LIKE '%@test.com'
+          AND LOWER(pprof.email) NOT LIKE '%@example.com'
+          AND LOWER(pprof.email) NOT LIKE '%@popshoplive.com'
+          AND LOWER(pprof.email) NOT LIKE '%@commentsold.com'
+        ))
       ORDER BY t1.created_at DESC;;
   }
 
@@ -53,17 +64,17 @@ view: trial_report {
     hidden: yes
   }
 
-  dimension_group: start_date_at {
+  dimension_group: trial_starts_at {
     type: time
     convert_tz: no
-    sql: ${TABLE}.start_date ;;
+    sql: ${TABLE}.trial_starts ;;
     timeframes: [date, week, month, quarter, year]
   }
 
-  dimension_group: end_date_at {
+  dimension_group: trial_ends_at {
     type: time
     convert_tz: no
-    sql: ${TABLE}.end_date ;;
+    sql: ${TABLE}.trial_ends ;;
     timeframes: [date, week, month, quarter, year]
   }
 
@@ -143,14 +154,14 @@ view: trial_report {
 
   measure: sum_total_active_trials {
     type: count_distinct
-    sql: CASE WHEN ${trial_status} = 'Trialing' THEN ${id} END ;;
+    sql: CASE WHEN ${TABLE}.trial_type = 1 THEN ${id} END ;;
     label: "Active Trials"
     drill_fields: [onboarding_details*]
   }
 
   measure: sum_total_ended_trials {
     type: count_distinct
-    sql: CASE WHEN ${trial_status} = 'Trial ended' THEN ${id} END ;;
+    sql: CASE WHEN ${TABLE}.trial_type = 2 THEN ${id} END ;;
     label: "Ended Trials"
     drill_fields: [onboarding_details*]
   }
@@ -166,8 +177,8 @@ view: trial_report {
       plan_interval,
       price,
       trial_status,
-      start_date_at_date,
-      end_date_at_date,
+      trial_starts_at_date,
+      trial_ends_at_date,
       marketing_campaign,
       acquisition_source,
       utm_regintent,

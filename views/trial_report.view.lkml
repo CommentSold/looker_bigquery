@@ -9,8 +9,8 @@ view: trial_report {
       WITH base AS (
         SELECT
           id,
-          DATE(current_period_start) AS start_date,
-          DATE(trial_end) AS end_date,
+          current_period_start AS start_date,
+          trial_end AS end_date,
           COUNT(*) AS total_trials,
           COUNT(CASE WHEN DATE(trial_end) <= CURRENT_DATE() THEN 1 END) AS total_ended_trials,
           COUNT(CASE WHEN DATE(trial_end) > CURRENT_DATE() THEN 1 END) AS total_active_trials

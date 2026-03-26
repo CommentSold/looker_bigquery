@@ -23,7 +23,3 @@ explore: trial_report {
   label: "Trial Report"
   group_label: "Trial"
 }
-explore: funnel_combined {
-  label: "Funnel Performance"
-  description: "Clustered + stacked funnel view by acquisition source"
-}

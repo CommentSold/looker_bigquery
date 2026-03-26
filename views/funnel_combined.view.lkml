@@ -1,13 +1,11 @@
 view: funnel_combined {
+  filter: date_range {
+    type: date
+    description: "Filter events by date range. Use 'is in range' in the UI to pick start and end. Optional."
+  }
 
   derived_table: {
-    persist_for: "24 hours"
-
-    datagroup_trigger: funnel_combined_dg
-
-    sql:
-
-    WITH base_acquisition AS (
+    sql: WITH base_acquisition AS (
       SELECT
         DATE(st.created_at) AS event_date,
         'Acquisition' AS stage,

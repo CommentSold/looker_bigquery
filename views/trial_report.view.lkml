@@ -19,8 +19,8 @@ view: trial_report {
           ELSE 'organic_walk-in'
         END AS acquisition_source,
         t1.id,
-        t1.current_period_start AS start_date,
-        t1.trial_end AS end_date,
+        t1.current_period_start AS trial_started,
+        t1.trial_end AS trial_ended,
         t1.subscription_id,
         t1.user_id,
         CASE
@@ -53,17 +53,17 @@ view: trial_report {
     hidden: yes
   }
 
-  dimension_group: start_date_at {
+  dimension_group: trial_started_at {
     type: time
     convert_tz: no
-    sql: ${TABLE}.start_date ;;
+    sql: ${TABLE}.trial_started ;;
     timeframes: [date, week, month, quarter, year]
   }
 
-  dimension_group: end_date_at {
+  dimension_group: trial_ended_at {
     type: time
     convert_tz: no
-    sql: ${TABLE}.end_date ;;
+    sql: ${TABLE}.trial_ended ;;
     timeframes: [date, week, month, quarter, year]
   }
 
@@ -166,8 +166,8 @@ view: trial_report {
       plan_interval,
       price,
       trial_status,
-      start_date_at_date,
-      end_date_at_date,
+      trial_started_at_date,
+      trial_ended_at_date,
       marketing_campaign,
       acquisition_source,
       utm_regintent,

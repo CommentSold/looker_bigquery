@@ -18,9 +18,10 @@ view: trial_report {
           WHEN oe.context_campaign_campaign IS NOT NULL THEN 'marketing_campaign'
           ELSE 'organic_walk-in'
         END AS acquisition_source,
+        st.created_at AS sign_up_store_created_at,
         t1.id,
         t1.current_period_start AS trial_started,
-        t1.trial_end AS trial_ended,
+        t1.trial_end AS trial_ending,
         t1.subscription_id,
         t1.user_id,
         CASE
@@ -31,12 +32,13 @@ view: trial_report {
         JSON_EXTRACT_SCALAR(plan, '$.interval') AS plan_interval,
         CASE
           WHEN t1.trial_end IS NULL THEN 'No trial'
-          WHEN DATE(t1.trial_end) < CURRENT_DATE() THEN 'Trial ended'
-          ELSE 'Trialing'
+          WHEN DATE(t1.trial_end) < CURRENT_DATE() THEN 'Trial Ended'
+          ELSE 'Trial Started'
         END AS trial_status
       FROM dbt_popshop.fact_seller_subscription t1,
       UNNEST(t1.plans) AS plan
       LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_profiles` prof ON prof.user_id = t1.user_id
+      LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_stores` st ON st.store_id = t1.user_id
       LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_private_profiles` pprof ON pprof.user_id = t1.user_id
       LEFT JOIN `popshoplive-26f81.popstore.popstore_onboarding_screen_action` oe ON oe.user_id = t1.user_id
       WHERE
@@ -60,10 +62,10 @@ view: trial_report {
     timeframes: [date, week, month, quarter, year]
   }
 
-  dimension_group: trial_ended_at {
+  dimension_group: trial_ending_at {
     type: time
     convert_tz: no
-    sql: ${TABLE}.trial_ended ;;
+    sql: ${TABLE}.trial_ending ;;
     timeframes: [date, week, month, quarter, year]
   }
 
@@ -167,7 +169,7 @@ view: trial_report {
       price,
       trial_status,
       trial_started_at_date,
-      trial_ended_at_date,
+      trial_ending_at_date,
       marketing_campaign,
       acquisition_source,
       utm_regintent,

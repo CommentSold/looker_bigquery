@@ -23,3 +23,7 @@ explore: trial_report {
   label: "Trial Report"
   group_label: "Trial"
 }
+datagroup: funnel_combined_dg {
+  sql_trigger: SELECT MAX(updated_at) FROM `popshoplive-26f81.dbt_popshop.fact_seller_subscription` ;;
+  max_cache_age: "24 hours"
+}

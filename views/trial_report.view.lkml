@@ -18,7 +18,6 @@ view: trial_report {
           WHEN oe.context_campaign_campaign IS NOT NULL THEN 'marketing_campaign'
           ELSE 'organic_walk-in'
         END AS acquisition_source,
-        st.created_at AS sign_up_store_created_at,
         t1.id,
         t1.current_period_start AS trial_started,
         t1.trial_end AS trial_ending,
@@ -38,7 +37,6 @@ view: trial_report {
       FROM dbt_popshop.fact_seller_subscription t1,
       UNNEST(t1.plans) AS plan
       LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_profiles` prof ON prof.user_id = t1.user_id
-      LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_stores` st ON st.store_id = t1.user_id
       LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_private_profiles` pprof ON pprof.user_id = t1.user_id
       LEFT JOIN `popshoplive-26f81.popstore.popstore_onboarding_screen_action` oe ON oe.user_id = t1.user_id
       WHERE

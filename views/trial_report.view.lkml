@@ -15,7 +15,7 @@ view: trial_report {
     FROM dbt_popshop.fact_seller_subscription
     WHERE
       trial_end IS NOT NULL
-      AND {% condition date_range %} current_period_start {% endcondition %}
+      AND {% condition date_range %} TIMESTAMP(current_period_start) {% endcondition %}
     GROUP BY 1, 2, 3
     ORDER BY start_date;;
   }

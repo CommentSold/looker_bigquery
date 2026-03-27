@@ -145,6 +145,26 @@ view: trial_report {
     sql: ${TABLE}.acquisition_source ;;
   }
 
+  dimension: days_to_cancellation {
+    type: number
+    sql: DATE_DIFF(DATE(${TABLE}.trial_ends), DATE(${TABLE}.trial_starts), DAY) ;;
+    label: "Days to Cancellation"
+    hidden: yes
+  }
+
+  dimension: early_cancellation_segment {
+    type: string
+    label: "Cancellation Segment"
+    sql: CASE
+      WHEN ${TABLE}.trial_type = 2
+        AND DATE_DIFF(DATE(${TABLE}.trial_ends), DATE(${TABLE}.trial_starts), DAY) <= 6
+      THEN 'Cancelled within 6 days'
+      WHEN ${TABLE}.trial_type = 2
+      THEN 'Cancelled after 6 days'
+      ELSE 'Trial Active'
+    END ;;
+  }
+
   measure: sum_total_trials {
     type: count_distinct
     sql: ${id} ;;
@@ -179,6 +199,7 @@ view: trial_report {
       trial_status,
       trial_starts_at_date,
       trial_ends_at_date,
+      early_cancellation_segment,
       marketing_campaign,
       acquisition_source,
       utm_regintent,

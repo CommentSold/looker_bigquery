@@ -23,3 +23,7 @@ explore: trial_report {
   label: "Trial Report"
   group_label: "Trial"
 }
+explore: new_trial_report {
+  label: "New Trial Report"
+  group_label: "Trial"
+}

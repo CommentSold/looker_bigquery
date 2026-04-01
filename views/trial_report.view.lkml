@@ -6,6 +6,27 @@ view: trial_report {
 
   derived_table: {
     sql:
+      WITH base AS (
+        SELECT
+          t1.*,
+          plan,
+
+      COALESCE(
+        CASE
+          WHEN t1.cancellation_applied_at IS NOT NULL AND t1.cancellation_applied_at < t1.trial_end
+            THEN t1.cancellation_applied_at
+        END,
+        t1.trial_end
+      ) AS effective_trial_end
+
+      FROM dbt_popshop.fact_seller_subscription t1,
+      UNNEST(t1.plans) AS plan
+
+      WHERE
+        t1.trial_end IS NOT NULL
+        AND JSON_EXTRACT_SCALAR(plan, '$.planType') = 'plan'
+        AND {% condition date_range %} TIMESTAMP(t1.initial_start_date) {% endcondition %}
+      )
       SELECT
         prof.url_code AS sign_up_url_code,
         prof.username AS sign_up_user_username,
@@ -13,48 +34,82 @@ view: trial_report {
         oe.context_campaign_campaign as marketing_campaign,
         oe.utm_regintent,
         oe.business_type,
+
+        CASE
+          WHEN DATE(base.effective_trial_end) <= CURRENT_DATE()
+            AND DATE_DIFF(DATE(base.effective_trial_end), DATE(base.initial_start_date), DAY) <= 6
+            THEN 'Cancelled within 6 days'
+          WHEN DATE(base.effective_trial_end) <= CURRENT_DATE() THEN 'Cancelled after 6 days'
+        END AS cancellation_status,
+
         CASE
           WHEN oe.user_id IS NULL THEN 'event_not_fired'
           WHEN oe.context_campaign_campaign IS NOT NULL THEN 'marketing_campaign'
           ELSE 'organic_walk-in'
         END AS acquisition_source,
-        t1.id,
-        t1.current_period_start AS trial_starts,
-        t1.trial_end AS trial_ends,
-        t1.subscription_id,
-        t1.user_id,
-        CASE
-          WHEN t1.discounted_price IS NULL THEN (t1.price + t1.tax_amount)
-          ELSE t1.discounted_price
-        END AS price,
+
+        base.id,
+        base.status,
+        base.current_period_start
+        base.initial_start_date AS trial_starts,
+        base.trial_end AS trial_ends,
+        base.cancellation_applied_at,
+        base.effective_trial_end,
+        base.subscription_id,
+        base.user_id,
+
+        COALESCE(base.discounted_price, base.price + base.tax_amount) AS price,
+
         JSON_EXTRACT_SCALAR(plan, '$.productName') AS plan_name,
         JSON_EXTRACT_SCALAR(plan, '$.interval') AS plan_interval,
+
         CASE
-          WHEN t1.trial_end IS NULL THEN 'No trial'
-          WHEN DATE(t1.trial_end) < CURRENT_DATE() THEN 'Ended'
+          WHEN base.trial_end IS NULL THEN 'No trial'
+          WHEN DATE(base.effective_trial_end) <= CURRENT_DATE() THEN 'Ended'
           ELSE 'Started'
         END AS trial_status,
+
         CASE
-          WHEN t1.trial_end IS NULL THEN 3
-          WHEN DATE(t1.trial_end) < CURRENT_DATE() THEN 2
+          WHEN base.trial_end IS NULL THEN 3
+          WHEN DATE(base.effective_trial_end) <= CURRENT_DATE() THEN 2
           ELSE 1
-        END AS trial_type
-      FROM dbt_popshop.fact_seller_subscription t1,
-      UNNEST(t1.plans) AS plan
-      LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_profiles` prof ON prof.user_id = t1.user_id
-      LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_private_profiles` pprof ON pprof.user_id = t1.user_id
-      LEFT JOIN `popshoplive-26f81.popstore.popstore_onboarding_screen_action` oe ON oe.user_id = t1.user_id
-      WHERE
-        t1.trial_end IS NOT NULL
-        AND JSON_EXTRACT_SCALAR(plan, '$.planType') = 'plan'
-        AND {% condition date_range %} TIMESTAMP(t1.current_period_start) {% endcondition %}
-        AND (pprof.email IS NULL OR (
-          LOWER(pprof.email) NOT LIKE '%@test.com'
-          AND LOWER(pprof.email) NOT LIKE '%@example.com'
-          AND LOWER(pprof.email) NOT LIKE '%@popshoplive.com'
-          AND LOWER(pprof.email) NOT LIKE '%@commentsold.com'
-        ))
-      ORDER BY t1.created_at DESC;;
+        END AS trial_type,
+
+        CASE
+          WHEN base.initial_start_date IS NOT NULL THEN 1
+          ELSE 0
+        END AS is_trial_started,
+
+        CASE
+          WHEN DATE(base.effective_trial_end) <= CURRENT_DATE() THEN 1
+          ELSE 0
+        END AS is_trial_ended,
+
+      FROM base
+
+      LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_profiles` prof
+        ON prof.user_id = base.user_id
+
+      LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_private_profiles` pprof
+        ON pprof.user_id = base.user_id
+
+      LEFT JOIN (
+        SELECT * FROM (
+          SELECT * ,
+          ROW_NUMBER() OVER (PARTITION BY user_id) rn
+          FROM `popshoplive-26f81.popstore.popstore_onboarding_screen_action`
+        ) WHERE rn = 1
+      ) oe
+        ON oe.user_id = base.user_id
+
+      WHERE (pprof.email IS NULL OR (
+        LOWER(pprof.email) NOT LIKE '%@test.com'
+        AND LOWER(pprof.email) NOT LIKE '%@example.com'
+        AND LOWER(pprof.email) NOT LIKE '%@popshoplive.com'
+        AND LOWER(pprof.email) NOT LIKE '%@commentsold.com'
+      ))
+
+      ORDER BY base.initial_start_date DESC;;
   }
 
   dimension: id {
@@ -75,6 +130,13 @@ view: trial_report {
     type: time
     convert_tz: no
     sql: ${TABLE}.trial_ends ;;
+    timeframes: [date, week, month, quarter, year]
+  }
+
+  dimension_group: effective_trial_ends_at {
+    type: time
+    convert_tz: no
+    sql: ${TABLE}.effective_trial_end ;;
     timeframes: [date, week, month, quarter, year]
   }
 
@@ -145,24 +207,9 @@ view: trial_report {
     sql: ${TABLE}.acquisition_source ;;
   }
 
-  dimension: days_to_cancellation {
-    type: number
-    sql: DATE_DIFF(DATE(${TABLE}.trial_ends), DATE(${TABLE}.trial_starts), DAY) ;;
-    label: "Days to Cancellation"
-    hidden: yes
-  }
-
-  dimension: early_cancellation_segment {
+  dimension: cancellation_status {
     type: string
-    label: "Cancellation Segment"
-    sql: CASE
-      WHEN ${TABLE}.trial_type = 2
-        AND DATE_DIFF(DATE(${TABLE}.trial_ends), DATE(${TABLE}.trial_starts), DAY) <= 6
-      THEN 'Cancelled within 6 days'
-      WHEN ${TABLE}.trial_type = 2
-      THEN 'Cancelled after 6 days'
-      ELSE 'Trial Active'
-    END ;;
+    sql: ${TABLE}.cancellation_status ;;
   }
 
   measure: sum_total_trials {
@@ -172,18 +219,46 @@ view: trial_report {
     drill_fields: [onboarding_details*]
   }
 
-  measure: sum_total_active_trials {
-    type: count_distinct
-    sql: CASE WHEN ${TABLE}.trial_type = 1 THEN ${id} END ;;
-    label: "Active Trials"
+  measure: sum_total_trials_started {
+    type: sum
+    sql: ${TABLE}.is_trial_started ;;
+    label: "Started Trials"
     drill_fields: [onboarding_details*]
   }
 
-  measure: sum_total_ended_trials {
-    type: count_distinct
-    sql: CASE WHEN ${TABLE}.trial_type = 2 THEN ${id} END ;;
+  measure: sum_total_trials_ended {
+    type: sum
+    sql: ${TABLE}.is_trial_ended ;;
     label: "Ended Trials"
     drill_fields: [onboarding_details*]
+  }
+
+  measure: cancelled_within_7_days {
+    type: sum
+    sql: CASE
+        WHEN DATE(${TABLE}.effective_trial_end) <= CURRENT_DATE()
+         AND DATE_DIFF(DATE(${TABLE}.effective_trial_end), DATE(${TABLE}.initial_start_date), DAY) <= 7
+        THEN 1 ELSE 0
+      END ;;
+  }
+
+  measure: count_trial_conversions {
+    type: sum
+    sql: CASE
+        WHEN DATE(${TABLE}.effective_trial_end) <= CURRENT_DATE()
+         AND DATE_DIFF(DATE(${TABLE}.effective_trial_end), DATE(${TABLE}.initial_start_date), DAY) > 7
+        AND ${TABLE}.status = 'active'
+        THEN 1 ELSE 0
+      END ;;
+  }
+
+  measure: count_trial_conversions_2 {
+    type: sum
+    sql: CASE
+        WHEN DATE(${TABLE}.current_period_start) >= DATE(${TABLE}.effective_trial_end)
+          AND ${TABLE}.status = 'active'
+        THEN 1 ELSE 0
+      END;;
   }
 
   set: onboarding_details {
@@ -199,7 +274,8 @@ view: trial_report {
       trial_status,
       trial_starts_at_date,
       trial_ends_at_date,
-      early_cancellation_segment,
+      effective_trial_ends_at_date,
+      cancellation_status,
       marketing_campaign,
       acquisition_source,
       utm_regintent,

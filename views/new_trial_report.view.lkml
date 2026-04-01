@@ -36,12 +36,12 @@ view: new_trial_report {
         JSON_EXTRACT_SCALAR(plan, '$.interval') AS plan_interval,
         CASE
           WHEN t1.trial_end IS NULL THEN 'No trial'
-          WHEN DATE(t1.trial_end) < CURRENT_DATE() THEN 'Ended'
+          WHEN DATE(t1.trial_end) <= CURRENT_DATE() THEN 'Ended'
           ELSE 'Started'
         END AS trial_status,
         CASE
           WHEN t1.trial_end IS NULL THEN 3
-          WHEN DATE(t1.trial_end) < CURRENT_DATE() THEN 2
+          WHEN DATE(t1.trial_end) <= CURRENT_DATE() THEN 2
           ELSE 1
         END AS trial_type
       FROM dbt_popshop.fact_seller_subscription t1,

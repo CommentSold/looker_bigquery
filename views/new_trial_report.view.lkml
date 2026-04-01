@@ -84,8 +84,16 @@ view: new_trial_report {
       LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_private_profiles` pprof
         ON pprof.user_id = base.user_id
 
-      LEFT JOIN `popshoplive-26f81.popstore.popstore_onboarding_screen_action` oe
-        ON oe.user_id = base.user_id
+      LEFT JOIN (
+        SELECT *
+        FROM (
+          SELECT * ,
+          ROW_NUMBER() OVER (PARTITION BY user_id) rn
+          FROM `popshoplive-26f81.popstore.popstore_onboarding_screen_action`
+        )
+        WHERE rn = 1
+      ) oe
+      ON oe.user_id = base.user_id
 
       WHERE
         (pprof.email IS NULL OR (

@@ -6,6 +6,25 @@ view: new_trial_report {
 
   derived_table: {
     sql:
+      WITH base AS (
+        SELECT
+          t1.*,
+          plan,
+          COALESCE(
+            CASE
+              WHEN t1.cancellation_applied_at IS NOT NULL
+                   AND t1.cancellation_applied_at < t1.trial_end
+              THEN t1.cancellation_applied_at
+            END,
+            t1.trial_end
+          ) AS effective_trial_end
+        FROM dbt_popshop.fact_seller_subscription t1,
+        UNNEST(t1.plans) AS plan
+        WHERE
+          t1.trial_end IS NOT NULL
+          AND JSON_EXTRACT_SCALAR(plan, '$.planType') = 'plan'
+          AND {% condition date_range %} TIMESTAMP(t1.initial_start_date) {% endcondition %}
+      )
       SELECT
         prof.url_code AS sign_up_url_code,
         prof.username AS sign_up_user_username,
@@ -14,8 +33,11 @@ view: new_trial_report {
         oe.utm_regintent,
         oe.business_type,
         CASE
-          WHEN DATE(trial_end) <= CURRENT_DATE() AND DATE_DIFF(DATE(trial_end), DATE(initial_start_date), DAY) <= 6 THEN 'Cancelled within 6 days'
-          WHEN DATE(trial_end) <= CURRENT_DATE() THEN 'Cancelled after 6 days'
+          WHEN DATE(base.effective_trial_end) <= CURRENT_DATE()
+               AND DATE_DIFF(DATE(base.effective_trial_end), DATE(base.initial_start_date), DAY) <= 6
+            THEN 'Cancelled within 6 days'
+          WHEN DATE(base.effective_trial_end) <= CURRENT_DATE()
+            THEN 'Cancelled after 6 days'
           ELSE 'Trial Active'
         END AS cancellation_status,
         CASE
@@ -23,43 +45,44 @@ view: new_trial_report {
           WHEN oe.context_campaign_campaign IS NOT NULL THEN 'marketing_campaign'
           ELSE 'organic_walk-in'
         END AS acquisition_source,
-        t1.id,
-        t1.initial_start_date AS trial_starts,
-        t1.trial_end AS trial_ends,
-        t1.subscription_id,
-        t1.user_id,
-        CASE
-          WHEN t1.discounted_price IS NULL THEN (t1.price + t1.tax_amount)
-          ELSE t1.discounted_price
-        END AS price,
+        base.id,
+        base.initial_start_date AS trial_starts,
+        base.trial_end AS trial_ends,
+        base.cancellation_applied_at,
+        base.effective_trial_end,
+        base.subscription_id,
+        base.user_id,
+        COALESCE(base.discounted_price, base.price + base.tax_amount) AS price,
         JSON_EXTRACT_SCALAR(plan, '$.productName') AS plan_name,
         JSON_EXTRACT_SCALAR(plan, '$.interval') AS plan_interval,
         CASE
-          WHEN t1.trial_end IS NULL THEN 'No trial'
-          WHEN DATE(t1.trial_end) <= CURRENT_DATE() THEN 'Ended'
+          WHEN base.trial_end IS NULL THEN 'No trial'
+          WHEN DATE(base.effective_trial_end) <= CURRENT_DATE() THEN 'Ended'
           ELSE 'Started'
         END AS trial_status,
         CASE
-          WHEN t1.trial_end IS NULL THEN 3
-          WHEN DATE(t1.trial_end) <= CURRENT_DATE() THEN 2
+          WHEN base.trial_end IS NULL THEN 3
+          WHEN DATE(base.effective_trial_end) <= CURRENT_DATE() THEN 2
           ELSE 1
         END AS trial_type
-      FROM dbt_popshop.fact_seller_subscription t1,
-      UNNEST(t1.plans) AS plan
-      LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_profiles` prof ON prof.user_id = t1.user_id
-      LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_private_profiles` pprof ON pprof.user_id = t1.user_id
-      LEFT JOIN `popshoplive-26f81.popstore.popstore_onboarding_screen_action` oe ON oe.user_id = t1.user_id
+
+      FROM base
+
+      LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_profiles` prof
+        ON prof.user_id = base.user_id
+      LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_private_profiles` pprof
+        ON pprof.user_id = base.user_id
+      LEFT JOIN `popshoplive-26f81.popstore.popstore_onboarding_screen_action` oe
+        ON oe.user_id = base.user_id
       WHERE
-        t1.trial_end IS NOT NULL
-        AND JSON_EXTRACT_SCALAR(plan, '$.planType') = 'plan'
-        AND {% condition date_range %} TIMESTAMP(t1.initial_start_date) {% endcondition %}
-        AND (pprof.email IS NULL OR (
+        (pprof.email IS NULL OR (
           LOWER(pprof.email) NOT LIKE '%@test.com'
           AND LOWER(pprof.email) NOT LIKE '%@example.com'
           AND LOWER(pprof.email) NOT LIKE '%@popshoplive.com'
           AND LOWER(pprof.email) NOT LIKE '%@commentsold.com'
         ))
-      ORDER BY t1.created_at DESC;;
+
+      ORDER BY base.created_at DESC;;
   }
 
   dimension: id {

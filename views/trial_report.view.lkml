@@ -237,9 +237,11 @@ view: trial_report {
     type: sum
     sql: CASE
         WHEN DATE(${TABLE}.effective_trial_end) <= CURRENT_DATE()
-         AND DATE_DIFF(DATE(${TABLE}.effective_trial_end), DATE(${TABLE}.trial_starts), DAY) <= 7
+         AND DATE_DIFF(DATE(${TABLE}.effective_trial_end), DATE(${TABLE}.trial_starts), DAY) <= 6
         THEN 1 ELSE 0
       END ;;
+    label: "Cancelled within 7 Days"
+    drill_fields: [onboarding_details*]
   }
 
   measure: count_trial_conversions {
@@ -250,6 +252,8 @@ view: trial_report {
         AND ${TABLE}.status = 'active'
         THEN 1 ELSE 0
       END ;;
+    label: "Count Trial Conversions"
+    drill_fields: [onboarding_details*]
   }
 
   measure: count_trial_conversions_2 {
@@ -259,6 +263,8 @@ view: trial_report {
           AND ${TABLE}.status = 'active'
         THEN 1 ELSE 0
       END;;
+    label: "Count Trial Conversions 2"
+    drill_fields: [onboarding_details*]
   }
 
   set: onboarding_details {

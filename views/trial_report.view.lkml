@@ -50,7 +50,7 @@ view: trial_report {
 
         base.id,
         base.status,
-        base.current_period_start
+        base.current_period_start,
         base.initial_start_date AS trial_starts,
         base.trial_end AS trial_ends,
         base.cancellation_applied_at,
@@ -237,7 +237,7 @@ view: trial_report {
     type: sum
     sql: CASE
         WHEN DATE(${TABLE}.effective_trial_end) <= CURRENT_DATE()
-         AND DATE_DIFF(DATE(${TABLE}.effective_trial_end), DATE(${TABLE}.initial_start_date), DAY) <= 7
+         AND DATE_DIFF(DATE(${TABLE}.effective_trial_end), DATE(${TABLE}.trial_starts), DAY) <= 7
         THEN 1 ELSE 0
       END ;;
   }
@@ -246,7 +246,7 @@ view: trial_report {
     type: sum
     sql: CASE
         WHEN DATE(${TABLE}.effective_trial_end) <= CURRENT_DATE()
-         AND DATE_DIFF(DATE(${TABLE}.effective_trial_end), DATE(${TABLE}.initial_start_date), DAY) > 7
+         AND DATE_DIFF(DATE(${TABLE}.effective_trial_end), DATE(${TABLE}.trial_starts), DAY) > 7
         AND ${TABLE}.status = 'active'
         THEN 1 ELSE 0
       END ;;

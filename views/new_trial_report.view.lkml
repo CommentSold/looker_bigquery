@@ -42,7 +42,6 @@ view: new_trial_report {
             THEN 'Cancelled within 6 days'
           WHEN DATE(base.effective_trial_end) <= CURRENT_DATE()
             THEN 'Cancelled after 6 days'
-          ELSE 'Trial Active'
         END AS cancellation_status,
 
         CASE
@@ -74,7 +73,17 @@ view: new_trial_report {
           WHEN base.trial_end IS NULL THEN 3
           WHEN DATE(base.effective_trial_end) <= CURRENT_DATE() THEN 2
           ELSE 1
-        END AS trial_type
+        END AS trial_type,
+
+        CASE
+          WHEN base.initial_start_date IS NOT NULL THEN 1
+          ELSE 0
+        END AS is_trial_started,
+
+        CASE
+          WHEN DATE(base.effective_trial_end) <= CURRENT_DATE() THEN 1
+          ELSE 0
+        END AS is_trial_ended,
 
       FROM base
 
@@ -213,16 +222,16 @@ view: new_trial_report {
     drill_fields: [onboarding_details*]
   }
 
-  measure: sum_total_active_trials {
-    type: count_distinct
-    sql: CASE WHEN ${TABLE}.trial_type = 1 THEN ${id} END ;;
-    label: "Active Trials"
+  measure: sum_total_trials_started {
+    type: sum
+    sql: ${TABLE}.is_trial_started ;;
+    label: "Started Trials"
     drill_fields: [onboarding_details*]
   }
 
-  measure: sum_total_ended_trials {
-    type: count_distinct
-    sql: CASE WHEN ${TABLE}.trial_type = 2 THEN ${id} END ;;
+  measure: sum_total_trials_ended {
+    type: sum
+    sql: ${TABLE}.is_trial_ended ;;
     label: "Ended Trials"
     drill_fields: [onboarding_details*]
   }

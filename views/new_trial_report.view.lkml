@@ -37,14 +37,6 @@ view: new_trial_report {
         oe.business_type,
 
         CASE
-          WHEN DATE(base.effective_trial_end) <= CURRENT_DATE()
-               AND DATE_DIFF(DATE(base.effective_trial_end), DATE(base.initial_start_date), DAY) <= 6
-            THEN 'Cancelled within 6 days'
-          WHEN DATE(base.effective_trial_end) <= CURRENT_DATE()
-            THEN 'Cancelled after 6 days'
-        END AS cancellation_status,
-
-        CASE
           WHEN oe.user_id IS NULL THEN 'event_not_fired'
           WHEN oe.context_campaign_campaign IS NOT NULL THEN 'marketing_campaign'
           ELSE 'organic_walk-in'
@@ -210,11 +202,6 @@ view: new_trial_report {
     sql: ${TABLE}.acquisition_source ;;
   }
 
-  dimension: cancellation_status {
-    type: string
-    sql: ${TABLE}.cancellation_status ;;
-  }
-
   measure: sum_total_trials {
     type: count_distinct
     sql: ${id} ;;
@@ -236,6 +223,24 @@ view: new_trial_report {
     drill_fields: [onboarding_details*]
   }
 
+  measure: cancelled_within_7_days {
+    type: sum
+    sql: CASE
+        WHEN DATE(${TABLE}.effective_trial_end) <= CURRENT_DATE()
+         AND DATE_DIFF(DATE(${TABLE}.effective_trial_end), DATE(${TABLE}.initial_start_date), DAY) <= 7
+        THEN 1 ELSE 0
+      END ;;
+  }
+
+  measure: count_trial_conversions {
+    type: sum
+    sql: CASE
+        WHEN DATE(${TABLE}.effective_trial_end) <= CURRENT_DATE()
+         AND DATE_DIFF(DATE(${TABLE}.effective_trial_end), DATE(${TABLE}.initial_start_date), DAY) > 7
+        THEN 1 ELSE 0
+      END ;;
+  }
+
   set: onboarding_details {
     fields: [
       user_id,
@@ -250,7 +255,6 @@ view: new_trial_report {
       trial_starts_at_date,
       trial_ends_at_date,
       effective_trial_ends_at_date,
-      cancellation_status,
       marketing_campaign,
       acquisition_source,
       utm_regintent,

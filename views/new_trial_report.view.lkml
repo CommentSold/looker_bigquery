@@ -10,6 +10,7 @@ view: new_trial_report {
         SELECT
           t1.*,
           plan,
+
           COALESCE(
             CASE
               WHEN t1.cancellation_applied_at IS NOT NULL
@@ -18,8 +19,10 @@ view: new_trial_report {
             END,
             t1.trial_end
           ) AS effective_trial_end
+
         FROM dbt_popshop.fact_seller_subscription t1,
         UNNEST(t1.plans) AS plan
+
         WHERE
           t1.trial_end IS NOT NULL
           AND JSON_EXTRACT_SCALAR(plan, '$.planType') = 'plan'
@@ -32,6 +35,7 @@ view: new_trial_report {
         oe.context_campaign_campaign as marketing_campaign,
         oe.utm_regintent,
         oe.business_type,
+
         CASE
           WHEN DATE(base.effective_trial_end) <= CURRENT_DATE()
                AND DATE_DIFF(DATE(base.effective_trial_end), DATE(base.initial_start_date), DAY) <= 6
@@ -40,11 +44,13 @@ view: new_trial_report {
             THEN 'Cancelled after 6 days'
           ELSE 'Trial Active'
         END AS cancellation_status,
+
         CASE
           WHEN oe.user_id IS NULL THEN 'event_not_fired'
           WHEN oe.context_campaign_campaign IS NOT NULL THEN 'marketing_campaign'
           ELSE 'organic_walk-in'
         END AS acquisition_source,
+
         base.id,
         base.initial_start_date AS trial_starts,
         base.trial_end AS trial_ends,
@@ -52,14 +58,18 @@ view: new_trial_report {
         base.effective_trial_end,
         base.subscription_id,
         base.user_id,
+
         COALESCE(base.discounted_price, base.price + base.tax_amount) AS price,
+
         JSON_EXTRACT_SCALAR(plan, '$.productName') AS plan_name,
         JSON_EXTRACT_SCALAR(plan, '$.interval') AS plan_interval,
+
         CASE
           WHEN base.trial_end IS NULL THEN 'No trial'
           WHEN DATE(base.effective_trial_end) <= CURRENT_DATE() THEN 'Ended'
           ELSE 'Started'
         END AS trial_status,
+
         CASE
           WHEN base.trial_end IS NULL THEN 3
           WHEN DATE(base.effective_trial_end) <= CURRENT_DATE() THEN 2
@@ -70,10 +80,13 @@ view: new_trial_report {
 
       LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_profiles` prof
         ON prof.user_id = base.user_id
+
       LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_private_profiles` pprof
         ON pprof.user_id = base.user_id
+
       LEFT JOIN `popshoplive-26f81.popstore.popstore_onboarding_screen_action` oe
         ON oe.user_id = base.user_id
+
       WHERE
         (pprof.email IS NULL OR (
           LOWER(pprof.email) NOT LIKE '%@test.com'
@@ -82,7 +95,7 @@ view: new_trial_report {
           AND LOWER(pprof.email) NOT LIKE '%@commentsold.com'
         ))
 
-      ORDER BY base.created_at DESC;;
+      ORDER BY base.initial_start_date DESC;;
   }
 
   dimension: id {
@@ -103,6 +116,13 @@ view: new_trial_report {
     type: time
     convert_tz: no
     sql: ${TABLE}.trial_ends ;;
+    timeframes: [date, week, month, quarter, year]
+  }
+
+  dimension_group: effective_trial_ends_at {
+    type: time
+    convert_tz: no
+    sql: ${TABLE}.effective_trial_end ;;
     timeframes: [date, week, month, quarter, year]
   }
 
@@ -212,6 +232,7 @@ view: new_trial_report {
       trial_status,
       trial_starts_at_date,
       trial_ends_at_date,
+      effective_trial_ends_at_date,
       cancellation_status,
       marketing_campaign,
       acquisition_source,

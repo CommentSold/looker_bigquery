@@ -45,6 +45,18 @@ view: new_trial_report {
         END AS cancellation_status,
 
         CASE
+          WHEN DATE(base.effective_trial_end) <= CURRENT_DATE()
+               AND DATE_DIFF(DATE(base.effective_trial_end), DATE(base.initial_start_date), DAY) <= 6
+            THEN 1 ELSE 0
+        END AS within_7_days,
+
+        CASE
+          WHEN DATE(base.effective_trial_end) <= CURRENT_DATE()
+            AND DATE_DIFF(DATE(base.effective_trial_end), DATE(base.initial_start_date), DAY) > 6
+          THEN 1 ELSE 0
+        END AS after_7_days,
+
+        CASE
           WHEN oe.user_id IS NULL THEN 'event_not_fired'
           WHEN oe.context_campaign_campaign IS NOT NULL THEN 'marketing_campaign'
           ELSE 'organic_walk-in'
@@ -211,6 +223,18 @@ view: new_trial_report {
     sql: ${TABLE}.acquisition_source ;;
   }
 
+  dimension: within_7_days {
+    type: number
+    sql: ${TABLE}.within_7_days ;;
+    hidden: yes
+  }
+
+  dimension: after_7_days {
+    type: number
+    sql: ${TABLE}.after_7_days ;;
+    hidden: yes
+  }
+
   dimension: cancellation_status {
     type: string
     sql: ${TABLE}.cancellation_status ;;
@@ -238,21 +262,17 @@ view: new_trial_report {
   }
 
   measure: cancelled_within_7_days {
-    type: sum
-    sql: CASE
-        WHEN DATE(${TABLE}.effective_trial_end) <= CURRENT_DATE()
-         AND DATE_DIFF(DATE(${TABLE}.effective_trial_end), DATE(${TABLE}.initial_start_date), DAY) <= 7
-        THEN 1 ELSE 0
-      END ;;
+    type: count
+    filters: [within_7_days: "1"]
+    label: "Within 7 days"
+    drill_fields: [onboarding_details*]
   }
 
-  measure: count_trial_conversions {
-    type: sum
-    sql: CASE
-        WHEN DATE(${TABLE}.effective_trial_end) <= CURRENT_DATE()
-         AND DATE_DIFF(DATE(${TABLE}.effective_trial_end), DATE(${TABLE}.initial_start_date), DAY) > 7
-        THEN 1 ELSE 0
-      END ;;
+  measure: cancelled_after_7_days {
+    type: count
+    filters: [after_7_days: "1"]
+    label: "After 7 days"
+    drill_fields: [onboarding_details*]
   }
 
   set: onboarding_details {
@@ -269,7 +289,6 @@ view: new_trial_report {
       trial_starts_at_date,
       trial_ends_at_date,
       effective_trial_ends_at_date,
-      cancellation_status,
       marketing_campaign,
       acquisition_source,
       utm_regintent,

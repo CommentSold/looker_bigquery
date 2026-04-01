@@ -11,21 +11,21 @@ view: trial_report {
           t1.*,
           plan,
 
-      COALESCE(
-        CASE
-          WHEN t1.cancellation_applied_at IS NOT NULL AND t1.cancellation_applied_at < t1.trial_end
-            THEN t1.cancellation_applied_at
-        END,
-        t1.trial_end
-      ) AS effective_trial_end
+        COALESCE(
+          CASE
+            WHEN t1.cancellation_applied_at IS NOT NULL AND t1.cancellation_applied_at < t1.trial_end
+              THEN t1.cancellation_applied_at
+          END,
+          t1.trial_end
+        ) AS effective_trial_end
 
-      FROM dbt_popshop.fact_seller_subscription t1,
-      UNNEST(t1.plans) AS plan
+        FROM dbt_popshop.fact_seller_subscription t1,
+        UNNEST(t1.plans) AS plan
 
-      WHERE
-        t1.trial_end IS NOT NULL
-        AND JSON_EXTRACT_SCALAR(plan, '$.planType') = 'plan'
-        AND {% condition date_range %} TIMESTAMP(t1.initial_start_date) {% endcondition %}
+        WHERE
+          t1.trial_end IS NOT NULL
+          AND JSON_EXTRACT_SCALAR(plan, '$.planType') = 'plan'
+          AND {% condition date_range %} TIMESTAMP(t1.initial_start_date) {% endcondition %}
       )
       SELECT
         prof.url_code AS sign_up_url_code,
@@ -37,10 +37,23 @@ view: trial_report {
 
         CASE
           WHEN DATE(base.effective_trial_end) <= CURRENT_DATE()
-            AND DATE_DIFF(DATE(base.effective_trial_end), DATE(base.initial_start_date), DAY) <= 6
+               AND DATE_DIFF(DATE(base.effective_trial_end), DATE(base.initial_start_date), DAY) <= 6
             THEN 'Cancelled within 6 days'
-          WHEN DATE(base.effective_trial_end) <= CURRENT_DATE() THEN 'Cancelled after 6 days'
+          WHEN DATE(base.effective_trial_end) <= CURRENT_DATE()
+            THEN 'Cancelled after 6 days'
         END AS cancellation_status,
+
+        CASE
+          WHEN DATE(base.effective_trial_end) <= CURRENT_DATE()
+               AND DATE_DIFF(DATE(base.effective_trial_end), DATE(base.initial_start_date), DAY) <= 6
+            THEN 1 ELSE 0
+        END AS within_7_days,
+
+        CASE
+          WHEN DATE(base.effective_trial_end) <= CURRENT_DATE()
+            AND DATE_DIFF(DATE(base.effective_trial_end), DATE(base.initial_start_date), DAY) > 6
+          THEN 1 ELSE 0
+        END AS after_7_days,
 
         CASE
           WHEN oe.user_id IS NULL THEN 'event_not_fired'
@@ -65,13 +78,13 @@ view: trial_report {
 
         CASE
           WHEN base.trial_end IS NULL THEN 'No trial'
-          WHEN DATE(base.effective_trial_end) <= CURRENT_DATE() THEN 'Ended'
+          WHEN DATETIME(base.effective_trial_end) <= CURRENT_DATETIME() THEN 'Ended'
           ELSE 'Started'
         END AS trial_status,
 
         CASE
           WHEN base.trial_end IS NULL THEN 3
-          WHEN DATE(base.effective_trial_end) <= CURRENT_DATE() THEN 2
+          WHEN DATETIME(base.effective_trial_end) <= CURRENT_DATETIME() THEN 2
           ELSE 1
         END AS trial_type,
 
@@ -81,7 +94,7 @@ view: trial_report {
         END AS is_trial_started,
 
         CASE
-          WHEN DATE(base.effective_trial_end) <= CURRENT_DATE() THEN 1
+          WHEN DATETIME(base.effective_trial_end) <= CURRENT_DATETIME() THEN 1
           ELSE 0
         END AS is_trial_ended,
 
@@ -96,7 +109,7 @@ view: trial_report {
       LEFT JOIN (
         SELECT * FROM (
           SELECT * ,
-          ROW_NUMBER() OVER (PARTITION BY user_id) rn
+          ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY `timestamp` DESC) rn
           FROM `popshoplive-26f81.popstore.popstore_onboarding_screen_action`
         ) WHERE rn = 1
       ) oe
@@ -207,9 +220,16 @@ view: trial_report {
     sql: ${TABLE}.acquisition_source ;;
   }
 
-  dimension: cancellation_status {
-    type: string
-    sql: ${TABLE}.cancellation_status ;;
+  dimension: within_7_days {
+    type: number
+    sql: ${TABLE}.within_7_days ;;
+    hidden: yes
+  }
+
+  dimension: after_7_days {
+    type: number
+    sql: ${TABLE}.after_7_days ;;
+    hidden: yes
   }
 
   measure: sum_total_trials {
@@ -234,36 +254,16 @@ view: trial_report {
   }
 
   measure: cancelled_within_7_days {
-    type: sum
-    sql: CASE
-        WHEN DATE(${TABLE}.effective_trial_end) <= CURRENT_DATE()
-         AND DATE_DIFF(DATE(${TABLE}.effective_trial_end), DATE(${TABLE}.trial_starts), DAY) <= 6
-        THEN 1 ELSE 0
-      END ;;
-    label: "Cancelled within 7 Days"
+    type: count
+    filters: [within_7_days: "1"]
+    label: "Within 7 days"
     drill_fields: [onboarding_details*]
   }
 
-  measure: count_trial_conversions {
-    type: sum
-    sql: CASE
-        WHEN DATE(${TABLE}.effective_trial_end) <= CURRENT_DATE()
-         AND DATE_DIFF(DATE(${TABLE}.effective_trial_end), DATE(${TABLE}.trial_starts), DAY) > 7
-        AND ${TABLE}.status = 'active'
-        THEN 1 ELSE 0
-      END ;;
-    label: "Count Trial Conversions"
-    drill_fields: [onboarding_details*]
-  }
-
-  measure: count_trial_conversions_2 {
-    type: sum
-    sql: CASE
-        WHEN DATE(${TABLE}.current_period_start) >= DATE(${TABLE}.effective_trial_end)
-          AND ${TABLE}.status = 'active'
-        THEN 1 ELSE 0
-      END;;
-    label: "Count Trial Conversions 2"
+  measure: cancelled_after_7_days {
+    type: count
+    filters: [after_7_days: "1"]
+    label: "After 7 days"
     drill_fields: [onboarding_details*]
   }
 
@@ -281,7 +281,6 @@ view: trial_report {
       trial_starts_at_date,
       trial_ends_at_date,
       effective_trial_ends_at_date,
-      cancellation_status,
       marketing_campaign,
       acquisition_source,
       utm_regintent,

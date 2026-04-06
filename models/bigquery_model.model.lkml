@@ -27,3 +27,19 @@ explore: new_trial_report {
   label: "New Trial Report"
   group_label: "Trial"
 }
+explore: test_trial {
+  label: "Test Trial"
+  group_label: "Trial"
+}
+explore: trial_conversions {
+  label: "Trial Conversions"
+  group_label: "Trial"
+}
+explore: active_paid_subscribers {
+  label: "Active Paid Subscribers"
+  group_label: "Trial"
+}
+explore: trial_cancellations {
+  label: "Trial Cancellations"
+  group_label: "Trial"
+}

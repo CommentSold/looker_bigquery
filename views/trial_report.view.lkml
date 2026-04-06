@@ -53,6 +53,7 @@ view: trial_report {
       CASE
       WHEN DATE(base.effective_trial_end) <= CURRENT_DATE()
       AND DATE_DIFF(DATE(base.effective_trial_end), DATE(base.initial_start_date), DAY) > 6
+      AND base.status = 'active'
       THEN 1 ELSE 0
       END AS after_7_days,
 

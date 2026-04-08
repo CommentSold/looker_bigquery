@@ -42,3 +42,11 @@ explore: test_trial {
   label: "Test Trial"
   group_label: "Trial"
 }
+explore: daily_new_trials {
+  label: "Cumulative New Trials"
+  group_label: "Trial"
+}
+explore: trial_conversion_rate {
+  label: "Trial Conversion Rate"
+  group_label: "Trial"
+}

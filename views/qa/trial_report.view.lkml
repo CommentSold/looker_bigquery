@@ -46,22 +46,23 @@ view: trial_report {
         oe.business_type,
 
         CASE
-          WHEN DATE(base.effective_trial_end) <= CURRENT_DATE()
-            AND DATE_DIFF(DATE(base.effective_trial_end), DATE(base.initial_start_date), DAY) <= 6
-          THEN 'Cancelled within 6 days'
-          WHEN DATE(base.effective_trial_end) <= CURRENT_DATE()
-          THEN 'Cancelled after 6 days'
+          WHEN DATETIME(base.effective_trial_end) <= CURRENT_DATETIME()
+            AND DATETIME_DIFF(DATETIME(base.effective_trial_end), DATETIME(base.initial_start_date), DAY) <= 7
+          THEN 'Cancelled within 7 days'
+          WHEN DATETIME(base.effective_trial_end) <= CURRENT_DATETIME()
+          THEN 'Cancelled after 7 days'
         END AS cancellation_status,
 
         CASE
-          WHEN DATE(base.effective_trial_end) <= CURRENT_DATE()
-            AND DATE_DIFF(DATE(base.effective_trial_end), DATE(base.initial_start_date), DAY) <= 6
+          WHEN DATETIME(base.effective_trial_end) <= CURRENT_DATETIME()
+            AND DATETIME_DIFF(DATETIME(base.effective_trial_end), DATETIME(base.initial_start_date), DAY) <= 7
+            AND base.effective_trial_end = base.trial_end
           THEN 1 ELSE 0
         END AS within_7_days,
 
         CASE
-          WHEN DATE(base.effective_trial_end) <= CURRENT_DATE()
-            AND DATE_DIFF(DATE(base.effective_trial_end), DATE(base.initial_start_date), DAY) > 6
+          WHEN DATETIME(base.effective_trial_end) <= CURRENT_DATETIME()
+            AND DATETIME_DIFF(DATETIME(base.effective_trial_end), DATETIME(base.initial_start_date), DAY) > 7
             AND base.status = 'active'
           THEN 1 ELSE 0
         END AS after_7_days,
@@ -97,13 +98,13 @@ view: trial_report {
 
         CASE
           WHEN base.trial_end IS NULL THEN 'No trial'
-          WHEN DATE(base.effective_trial_end) <= CURRENT_DATE() THEN 'Ended'
+          WHEN DATETIME(base.effective_trial_end) <= CURRENT_DATETIME() THEN 'Ended'
           ELSE 'Started'
         END AS trial_status,
 
         CASE
           WHEN base.trial_end IS NULL THEN 3
-          WHEN DATE(base.effective_trial_end) <= CURRENT_DATE() THEN 2
+          WHEN DATETIME(base.effective_trial_end) <= CURRENT_DATETIME() THEN 2
           ELSE 1
         END AS trial_type,
 
@@ -113,7 +114,7 @@ view: trial_report {
         END AS is_trial_started,
 
         CASE
-          WHEN DATE(base.effective_trial_end) <= CURRENT_DATE() THEN 1
+          WHEN DATETIME(base.effective_trial_end) <= CURRENT_DATETIME() THEN 1
           ELSE 0
         END AS is_trial_ended,
 

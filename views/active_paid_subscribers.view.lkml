@@ -28,21 +28,13 @@ view: active_paid_subscribers {
       AND (ds.report_date < ss.next_change_date OR ss.next_change_date IS NULL)
       WHERE ss.status = 'active'
       AND ss.is_deleted = FALSE
-      )
+      ),
 
+      -- Deduplicate: one row per subscription with drilldown fields
+      sub_details AS (
       SELECT
-      da.report_date,
-      da.subscription_id,
-
-      -- Drilldown fields
+      fs.subscription_id,
       fs.user_id,
-      prof.url_code AS sign_up_url_code,
-      prof.username AS sign_up_user_username,
-      pprof.email AS sign_up_user_email,
-      oe.context_campaign_campaign AS marketing_campaign,
-      oe.utm_regintent,
-      oe.business_type,
-
       COALESCE(fs.discounted_price, fs.price + fs.tax_amount) AS price,
       JSON_EXTRACT_SCALAR(plan, '$.productName') AS plan_name,
       JSON_EXTRACT_SCALAR(plan, '$.interval') AS plan_interval,
@@ -71,6 +63,39 @@ view: active_paid_subscribers {
       ELSE 'Started'
       END AS trial_status,
 
+      ROW_NUMBER() OVER (PARTITION BY fs.subscription_id ORDER BY fs.updated_at DESC) AS rn
+
+      FROM `dbt_popshop.fact_seller_subscription` fs
+      CROSS JOIN UNNEST(fs.plans) AS plan
+
+      WHERE fs.is_deleted = FALSE
+      AND JSON_EXTRACT_SCALAR(plan, '$.planType') = 'plan'
+      ),
+
+      sub_details_deduped AS (
+      SELECT * FROM sub_details WHERE rn = 1
+      )
+
+      SELECT
+      da.report_date,
+      da.subscription_id,
+
+      sd.user_id,
+      prof.url_code AS sign_up_url_code,
+      prof.username AS sign_up_user_username,
+      pprof.email AS sign_up_user_email,
+      oe.context_campaign_campaign AS marketing_campaign,
+      oe.utm_regintent,
+      oe.business_type,
+
+      sd.price,
+      sd.plan_name,
+      sd.plan_interval,
+      sd.trial_starts,
+      sd.trial_ends,
+      sd.effective_trial_end,
+      sd.trial_status,
+
       CASE
       WHEN oe.user_id IS NULL THEN 'event_not_fired'
       WHEN oe.context_campaign_campaign IS NOT NULL THEN 'marketing_campaign'
@@ -79,17 +104,14 @@ view: active_paid_subscribers {
 
       FROM daily_active da
 
-      JOIN `dbt_popshop.fact_seller_subscription` fs
-      ON fs.subscription_id = da.subscription_id
-      AND fs.is_deleted = FALSE
-
-      CROSS JOIN UNNEST(fs.plans) AS plan
+      JOIN sub_details_deduped sd
+      ON sd.subscription_id = da.subscription_id
 
       LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_profiles` prof
-      ON prof.user_id = fs.user_id
+      ON prof.user_id = sd.user_id
 
       LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_private_profiles` pprof
-      ON pprof.user_id = fs.user_id
+      ON pprof.user_id = sd.user_id
 
       LEFT JOIN (
       SELECT *
@@ -100,11 +122,10 @@ view: active_paid_subscribers {
       )
       WHERE rn = 1
       ) oe
-      ON oe.user_id = fs.user_id
+      ON oe.user_id = sd.user_id
 
       WHERE
-      JSON_EXTRACT_SCALAR(plan, '$.planType') = 'plan'
-      AND (pprof.email IS NULL OR (
+      (pprof.email IS NULL OR (
       LOWER(pprof.email) NOT LIKE '%@test.com'
       AND LOWER(pprof.email) NOT LIKE '%@example.com'
       AND LOWER(pprof.email) NOT LIKE '%@popshoplive.com'

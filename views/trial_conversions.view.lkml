@@ -4,7 +4,8 @@ view: trial_conversions {
       WITH subscriptions AS (
         SELECT
           subscription_id,
-          trial_end AS trial_end_ts
+          trial_end AS trial_end_ts,
+          status AS sub_status
         FROM `dbt_popshop.fact_seller_subscription`
         WHERE is_deleted = FALSE
       ),
@@ -93,7 +94,7 @@ view: trial_conversions {
       WHERE rn = 1
       ),
 
-      -- OPEN, DRAFT, UNCOLLECTIBLE: latest status per billable invoice
+      -- OPEN, DRAFT, UNCOLLECTIBLE: latest invoice-level status per billable invoice
       latest_status_per_invoice AS (
       SELECT
       ih.invoice_id,
@@ -110,7 +111,7 @@ view: trial_conversions {
       AND ih.subscription_id = bi.subscription_id
       ),
 
-      open_or_unpaid_billable_invoices AS (
+      open_or_other_billable_invoices AS (
       SELECT
       invoice_id,
       subscription_id,
@@ -121,7 +122,7 @@ view: trial_conversions {
       AND status IN ('open', 'draft', 'uncollectible')
       ),
 
-      first_open_or_unpaid_per_sub AS (
+      first_open_or_other_per_sub AS (
       SELECT
       s.subscription_id,
       o.updated_at AS event_at,
@@ -131,17 +132,46 @@ view: trial_conversions {
       ORDER BY o.updated_at ASC
       ) AS rn
       FROM subscriptions s
-      JOIN open_or_unpaid_billable_invoices o
+      JOIN open_or_other_billable_invoices o
       ON s.subscription_id = o.subscription_id
       AND o.updated_at >= s.trial_end_ts
       ),
 
-      open_or_unpaid_conversions AS (
+      open_or_other_conversions AS (
       SELECT
       subscription_id,
       event_at,
       invoice_status
-      FROM first_open_or_unpaid_per_sub
+      FROM first_open_or_other_per_sub
+      WHERE rn = 1
+      ),
+
+      -- UNPAID: subscriptions with status='unpaid' that have a billable invoice
+      -- but did NOT appear in paid_conversions or open_or_other_conversions
+      unpaid_subs AS (
+      SELECT
+      s.subscription_id,
+      bi.invoice_created_at AS event_at,
+      'unpaid' AS invoice_status,
+      ROW_NUMBER() OVER (
+      PARTITION BY s.subscription_id
+      ORDER BY bi.invoice_created_at ASC
+      ) AS rn
+      FROM subscriptions s
+      JOIN billable_invoices bi
+      ON bi.subscription_id = s.subscription_id
+      AND bi.invoice_created_at >= s.trial_end_ts
+      WHERE s.sub_status = 'unpaid'
+      AND s.subscription_id NOT IN (SELECT subscription_id FROM paid_conversions)
+      AND s.subscription_id NOT IN (SELECT subscription_id FROM open_or_other_conversions)
+      ),
+
+      unpaid_conversions AS (
+      SELECT
+      subscription_id,
+      event_at,
+      invoice_status
+      FROM unpaid_subs
       WHERE rn = 1
       ),
 
@@ -149,7 +179,9 @@ view: trial_conversions {
       combined AS (
       SELECT * FROM paid_conversions
       UNION ALL
-      SELECT * FROM open_or_unpaid_conversions
+      SELECT * FROM open_or_other_conversions
+      UNION ALL
+      SELECT * FROM unpaid_conversions
       )
 
       SELECT
@@ -265,13 +297,13 @@ view: trial_conversions {
     timeframes: [raw, time, date, week, month, quarter, year]
     datatype: timestamp
     sql: ${TABLE}.event_at ;;
-    description: "Timestamp of the event (paid_at for paid, updated_at for others)"
+    description: "Timestamp of the event (paid_at for paid, invoice_created_at for unpaid, updated_at for others)"
   }
 
   dimension: invoice_status {
     type: string
     sql: ${TABLE}.invoice_status ;;
-    description: "Invoice status: paid, open, draft, or uncollectible. Pivot on this for stacked bars."
+    description: "Invoice status: paid, open, draft, uncollectible, or unpaid. Pivot on this for stacked bars."
   }
 
   dimension: user_id {
@@ -390,6 +422,13 @@ view: trial_conversions {
     type: count
     filters: [invoice_status: "uncollectible"]
     description: "Count of subscriptions with an uncollectible billable invoice post-trial"
+    drill_fields: [drilldown_details*]
+  }
+
+  measure: unpaid_trials {
+    type: count
+    filters: [invoice_status: "unpaid"]
+    description: "Count of subscriptions marked unpaid at subscription level (payment failed)"
     drill_fields: [drilldown_details*]
   }
 

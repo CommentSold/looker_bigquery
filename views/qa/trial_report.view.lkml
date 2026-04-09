@@ -11,166 +11,183 @@ view: trial_report {
           t1.*,
           plan,
 
-          COALESCE(
-            CASE
-              WHEN t1.cancellation_applied_at IS NOT NULL AND t1.cancellation_applied_at < t1.trial_end
-              THEN t1.cancellation_applied_at
-            END,
-            t1.trial_end
-          ) AS effective_trial_end
+      COALESCE(
+      CASE
+      WHEN t1.cancellation_applied_at IS NOT NULL AND t1.cancellation_applied_at < t1.trial_end
+      THEN t1.cancellation_applied_at
+      END,
+      t1.trial_end
+      ) AS effective_trial_end
 
-        FROM dbt_popshop.fact_seller_subscription t1,
-        UNNEST(t1.plans) AS plan
+      FROM dbt_popshop.fact_seller_subscription t1,
+      UNNEST(t1.plans) AS plan
 
-        WHERE
-          t1.trial_end IS NOT NULL
-          AND JSON_EXTRACT_SCALAR(plan, '$.planType') = 'plan'
-          AND {% condition date_range %} TIMESTAMP(t1.initial_start_date) {% endcondition %}
+      WHERE
+      t1.trial_end IS NOT NULL
+      AND JSON_EXTRACT_SCALAR(plan, '$.planType') = 'plan'
+      AND {% condition date_range %} TIMESTAMP(t1.initial_start_date) {% endcondition %}
       ),
 
       marketing_capture AS (
-        SELECT
-          user_id,
-          JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_campaign') AS utm_campaign,
-          JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_source') AS utm_source,
-          JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_regintent') AS utm_regintent
-        FROM `popshoplive-26f81.dbt_popshop.dim_private_profiles`
+      SELECT
+      user_id,
+      JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_campaign') AS utm_campaign,
+      JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_source') AS utm_source,
+      JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_regintent') AS utm_regintent
+      FROM `popshoplive-26f81.dbt_popshop.dim_private_profiles`
+      ),
+
+      -- ✅ Deduplicate ai_pdf_generations to most recent record per user_id
+      ai_pdf_latest AS (
+      SELECT
+      user_id,
+      session_id,
+      created_at,
+      status
+      FROM `popshoplive-26f81.commentsold.ai_pdf_generations`
+      QUALIFY ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY created_at DESC) = 1
       )
 
       SELECT
-        prof.url_code AS sign_up_url_code,
-        prof.username AS sign_up_user_username,
-        pprof.email AS sign_up_user_email,
-        oe.context_campaign_campaign AS marketing_campaign,
-        oe.utm_regintent,
-        oe.business_type,
+      prof.url_code AS sign_up_url_code,
+      prof.username AS sign_up_user_username,
+      pprof.email AS sign_up_user_email,
+      oe.context_campaign_campaign AS marketing_campaign,
+      oe.utm_regintent,
+      oe.business_type,
 
-        CASE
-          WHEN DATETIME(base.effective_trial_end) <= CURRENT_DATETIME()
-            AND DATETIME_DIFF(DATETIME(base.effective_trial_end), DATETIME(base.initial_start_date), DAY) <= 7
-          THEN 'Cancelled within 7 days'
-          WHEN DATETIME(base.effective_trial_end) <= CURRENT_DATETIME()
-          THEN 'Cancelled after 7 days'
-        END AS cancellation_status,
+      CASE
+      WHEN DATETIME(base.effective_trial_end) <= CURRENT_DATETIME()
+      AND DATETIME_DIFF(DATETIME(base.effective_trial_end), DATETIME(base.initial_start_date), DAY) <= 7
+      THEN 'Cancelled within 7 days'
+      WHEN DATETIME(base.effective_trial_end) <= CURRENT_DATETIME()
+      THEN 'Cancelled after 7 days'
+      END AS cancellation_status,
 
-        CASE
-          WHEN DATETIME(base.effective_trial_end) <= CURRENT_DATETIME()
-            AND DATETIME_DIFF(DATETIME(base.effective_trial_end), DATETIME(base.initial_start_date), DAY) <= 7
-            AND base.effective_trial_end = base.trial_end
-          THEN 1 ELSE 0
-        END AS within_7_days,
+      CASE
+      WHEN DATETIME(base.effective_trial_end) <= CURRENT_DATETIME()
+      AND DATETIME_DIFF(DATETIME(base.effective_trial_end), DATETIME(base.initial_start_date), DAY) <= 7
+      AND base.effective_trial_end = base.trial_end
+      THEN 1 ELSE 0
+      END AS within_7_days,
 
-        CASE
-          WHEN DATETIME(base.effective_trial_end) <= CURRENT_DATETIME()
-            AND DATETIME_DIFF(DATETIME(base.effective_trial_end), DATETIME(base.initial_start_date), DAY) > 7
-            AND base.status = 'active'
-          THEN 1 ELSE 0
-        END AS after_7_days,
+      CASE
+      WHEN DATETIME(base.effective_trial_end) <= CURRENT_DATETIME()
+      AND DATETIME_DIFF(DATETIME(base.effective_trial_end), DATETIME(base.initial_start_date), DAY) > 7
+      AND base.status = 'active'
+      THEN 1 ELSE 0
+      END AS after_7_days,
 
-        mc.utm_campaign AS marketing_utm_campaign,
-        mc.utm_source AS marketing_utm_source,
-        mc.utm_regintent AS marketing_utm_regintent,
+      mc.utm_campaign AS marketing_utm_campaign,
+      mc.utm_source AS marketing_utm_source,
+      mc.utm_regintent AS marketing_utm_regintent,
 
-        CASE
-          -- Has a campaign from either source
-          WHEN COALESCE(oe.context_campaign_campaign, mc.utm_campaign) IS NOT NULL
-          THEN 'marketing_campaign'
-          -- Has utm_source from private_profile
-          WHEN mc.utm_source IS NOT NULL
-          THEN 'marketing_campaign'
-          -- Only utm_regintent is present (no campaign, no source) = organic
-          ELSE 'organic_walk-in'
-        END AS acquisition_source,
+      CASE
+      WHEN COALESCE(oe.context_campaign_campaign, mc.utm_campaign) IS NOT NULL
+      THEN 'marketing_campaign'
+      WHEN mc.utm_source IS NOT NULL
+      THEN 'marketing_campaign'
+      ELSE 'organic_walk-in'
+      END AS acquisition_source,
 
-        base.id,
-        base.status,
-        base.initial_start_date AS trial_starts,
-        base.trial_end AS trial_ends,
-        base.cancellation_applied_at,
-        base.effective_trial_end,
-        base.subscription_id,
-        base.user_id,
+      base.id,
+      base.status,
+      base.initial_start_date AS trial_starts,
+      base.trial_end AS trial_ends,
+      base.cancellation_applied_at,
+      base.effective_trial_end,
+      base.subscription_id,
+      base.user_id,
 
-        COALESCE(base.discounted_price, base.price + base.tax_amount) AS price,
+      COALESCE(base.discounted_price, base.price + base.tax_amount) AS price,
 
-        JSON_EXTRACT_SCALAR(plan, '$.productName') AS plan_name,
-        JSON_EXTRACT_SCALAR(plan, '$.interval') AS plan_interval,
+      JSON_EXTRACT_SCALAR(plan, '$.productName') AS plan_name,
+      JSON_EXTRACT_SCALAR(plan, '$.interval') AS plan_interval,
 
-        CASE
-          WHEN base.trial_end IS NULL THEN 'No trial'
-          WHEN DATETIME(base.effective_trial_end) <= CURRENT_DATETIME() THEN 'Ended'
-          ELSE 'Started'
-        END AS trial_status,
+      CASE
+      WHEN base.trial_end IS NULL THEN 'No trial'
+      WHEN DATETIME(base.effective_trial_end) <= CURRENT_DATETIME() THEN 'Ended'
+      ELSE 'Started'
+      END AS trial_status,
 
-        CASE
-          WHEN base.trial_end IS NULL THEN 3
-          WHEN DATETIME(base.effective_trial_end) <= CURRENT_DATETIME() THEN 2
-          ELSE 1
-        END AS trial_type,
+      CASE
+      WHEN base.trial_end IS NULL THEN 3
+      WHEN DATETIME(base.effective_trial_end) <= CURRENT_DATETIME() THEN 2
+      ELSE 1
+      END AS trial_type,
 
-        CASE
-          WHEN base.initial_start_date IS NOT NULL THEN 1
-          ELSE 0
-        END AS is_trial_started,
+      CASE
+      WHEN base.initial_start_date IS NOT NULL THEN 1
+      ELSE 0
+      END AS is_trial_started,
 
-        CASE
-          WHEN DATETIME(base.effective_trial_end) <= CURRENT_DATETIME() THEN 1
-          ELSE 0
-        END AS is_trial_ended,
+      CASE
+      WHEN DATETIME(base.effective_trial_end) <= CURRENT_DATETIME() THEN 1
+      ELSE 0
+      END AS is_trial_ended,
 
-        base.current_period_start,
-        base.current_period_end,
+      base.current_period_start,
+      base.current_period_end,
 
-        CASE
-          WHEN base.current_period_start IS NOT NULL
-            AND DATETIME(base.current_period_start) >= DATETIME(base.effective_trial_end)
-            AND base.status = 'active'
-          THEN 1 ELSE 0
-        END AS is_subscription_start,
+      CASE
+      WHEN base.current_period_start IS NOT NULL
+      AND DATETIME(base.current_period_start) >= DATETIME(base.effective_trial_end)
+      AND base.status = 'active'
+      THEN 1 ELSE 0
+      END AS is_subscription_start,
 
-        CASE
-          WHEN base.cancellation_applied_at IS NOT NULL
-            AND base.current_period_end IS NOT NULL
-            AND DATETIME(base.current_period_end) <= CURRENT_DATETIME()
-          THEN 1 ELSE 0
-        END AS is_subscription_manually_ended,
+      CASE
+      WHEN base.cancellation_applied_at IS NOT NULL
+      AND base.current_period_end IS NOT NULL
+      AND DATETIME(base.current_period_end) <= CURRENT_DATETIME()
+      THEN 1 ELSE 0
+      END AS is_subscription_manually_ended,
 
-        CASE
-          WHEN base.cancellation_applied_at IS NULL
-            AND base.current_period_end IS NOT NULL
-            AND DATETIME(base.current_period_end) <= CURRENT_DATETIME()
-          THEN 1 ELSE 0
-        END AS is_subscription_ended,
+      CASE
+      WHEN base.cancellation_applied_at IS NULL
+      AND base.current_period_end IS NOT NULL
+      AND DATETIME(base.current_period_end) <= CURRENT_DATETIME()
+      THEN 1 ELSE 0
+      END AS is_subscription_ended,
+
+      -- ✅ ai_pdf_generations fields — "No Record" when no match
+      COALESCE(aipdf.session_id, 'No Record')    AS ai_pdf_session_id,
+      COALESCE(CAST(aipdf.created_at AS STRING), 'No Record') AS ai_pdf_created_at,
+      COALESCE(aipdf.status, 'No Record')        AS ai_pdf_status
 
       FROM base
 
       LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_profiles` prof
-        ON prof.user_id = base.user_id
+      ON prof.user_id = base.user_id
 
       LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_private_profiles` pprof
-        ON pprof.user_id = base.user_id
+      ON pprof.user_id = base.user_id
+
+      -- ✅ Use deduplicated CTE instead of raw table
+      LEFT JOIN ai_pdf_latest aipdf
+      ON aipdf.user_id = base.user_id
 
       LEFT JOIN marketing_capture mc
-        ON mc.user_id = base.user_id
+      ON mc.user_id = base.user_id
 
       LEFT JOIN (
-        SELECT *
-        FROM (
-          SELECT *,
-            ROW_NUMBER() OVER (PARTITION BY user_id) rn
-          FROM `popshoplive-26f81.popstore.popstore_onboarding_screen_action`
-        )
-        WHERE rn = 1
+      SELECT *
+      FROM (
+      SELECT *,
+      ROW_NUMBER() OVER (PARTITION BY user_id) rn
+      FROM `popshoplive-26f81.popstore.popstore_onboarding_screen_action`
+      )
+      WHERE rn = 1
       ) oe
-        ON oe.user_id = base.user_id
+      ON oe.user_id = base.user_id
 
       WHERE
-        (pprof.email IS NULL OR (
-          LOWER(pprof.email) NOT LIKE '%@test.com'
-          AND LOWER(pprof.email) NOT LIKE '%@example.com'
-          AND LOWER(pprof.email) NOT LIKE '%@popshoplive.com'
-          AND LOWER(pprof.email) NOT LIKE '%@commentsold.com'
-        ))
+      (pprof.email IS NULL OR (
+      LOWER(pprof.email) NOT LIKE '%@test.com'
+      AND LOWER(pprof.email) NOT LIKE '%@example.com'
+      AND LOWER(pprof.email) NOT LIKE '%@popshoplive.com'
+      AND LOWER(pprof.email) NOT LIKE '%@commentsold.com'
+      ))
 
       ORDER BY base.initial_start_date DESC;;
   }
@@ -319,6 +336,28 @@ view: trial_report {
     hidden: yes
   }
 
+  # ✅ ai_pdf_generations drill-down dimensions
+  dimension: ai_pdf_session_id {
+    type: string
+    sql: ${TABLE}.ai_pdf_session_id ;;
+    label: "AI PDF Session ID"
+    description: "Most recent session_id from ai_pdf_generations. 'No Record' if none found."
+  }
+
+  dimension: ai_pdf_created_at {
+    type: string
+    sql: ${TABLE}.ai_pdf_created_at ;;
+    label: "AI PDF Created At"
+    description: "Most recent created_at from ai_pdf_generations. 'No Record' if none found."
+  }
+
+  dimension: ai_pdf_status {
+    type: string
+    sql: ${TABLE}.ai_pdf_status ;;
+    label: "AI PDF Status"
+    description: "Most recent status from ai_pdf_generations. 'No Record' if none found."
+  }
+
   measure: sum_total_trials {
     type: count_distinct
     sql: ${id} ;;
@@ -399,7 +438,10 @@ view: trial_report {
       marketing_campaign,
       acquisition_source,
       utm_regintent,
-      business_type
+      business_type,
+      ai_pdf_session_id,
+      ai_pdf_created_at,
+      ai_pdf_status
     ]
   }
 }

@@ -50,3 +50,11 @@ explore: trial_conversion_rate {
   label: "Trial Conversion Rate"
   group_label: "Trial"
 }
+explore: trial_subscription_summary {
+  label: "Trial Subscription Summary"
+  group_label: "Trial"
+}
+explore: ai_pdf_generations {
+  label: "AI PDF Generations"
+  group_label: "AI PDF"
+}

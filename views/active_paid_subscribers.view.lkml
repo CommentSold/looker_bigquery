@@ -3,38 +3,57 @@ view: active_paid_subscribers {
     sql:
       WITH date_spine AS (
         SELECT d AS report_date
-        FROM UNNEST(GENERATE_DATE_ARRAY('2026-01-01', CURRENT_DATE())) AS d
+        FROM UNNEST(GENERATE_DATE_ARRAY('2025-01-01', CURRENT_DATE())) AS d
       ),
 
-      sub_states AS (
+      -- Get subscription start and end dates using reliable date fields
+      subscription_periods AS (
       SELECT
       subscription_id,
+      user_id,
       status,
-      is_deleted,
-      DATE(updated_at) AS effective_date,
-      LEAD(DATE(updated_at)) OVER (
-      PARTITION BY subscription_id ORDER BY updated_at
-      ) AS next_change_date
+      DATE(created_at) AS start_date,
+      -- Use cancellation_applied_at or current_period_end for end date if cancelled/inactive
+      CASE
+      WHEN status IN ('canceled', 'cancelled', 'unpaid', 'past_due') THEN
+      COALESCE(
+      DATE(cancellation_applied_at),
+      DATE(current_period_end),
+      DATE(created_at)
+      )
+      WHEN is_deleted = TRUE THEN DATE(created_at)
+      ELSE NULL
+      END AS end_date,
+      is_deleted
       FROM `dbt_popshop.fact_seller_subscription`
       ),
 
+      -- For each date, find subscriptions that were active
       daily_active AS (
       SELECT
       ds.report_date,
-      ss.subscription_id
+      sp.subscription_id
       FROM date_spine ds
-      JOIN sub_states ss
-      ON ds.report_date >= ss.effective_date
-      AND (ds.report_date < ss.next_change_date OR ss.next_change_date IS NULL)
-      WHERE ss.status = 'active'
-      AND ss.is_deleted = FALSE
-      ),
+      JOIN subscription_periods sp
+      ON ds.report_date >= sp.start_date
+      AND (sp.end_date IS NULL OR ds.report_date < sp.end_date)
+      WHERE sp.status = 'active'
+      AND sp.is_deleted = FALSE
+      )
 
-      -- Deduplicate: one row per subscription with drilldown fields
-      sub_details AS (
       SELECT
-      fs.subscription_id,
+      da.report_date,
+      da.subscription_id,
+
+      -- Drilldown fields
       fs.user_id,
+      prof.url_code AS sign_up_url_code,
+      prof.username AS sign_up_user_username,
+      pprof.email AS sign_up_user_email,
+      oe.context_campaign_campaign AS marketing_campaign,
+      oe.utm_regintent,
+      oe.business_type,
+
       COALESCE(fs.discounted_price, fs.price + fs.tax_amount) AS price,
       JSON_EXTRACT_SCALAR(plan, '$.productName') AS plan_name,
       JSON_EXTRACT_SCALAR(plan, '$.interval') AS plan_interval,
@@ -63,39 +82,6 @@ view: active_paid_subscribers {
       ELSE 'Started'
       END AS trial_status,
 
-      ROW_NUMBER() OVER (PARTITION BY fs.subscription_id ORDER BY fs.updated_at DESC) AS rn
-
-      FROM `dbt_popshop.fact_seller_subscription` fs
-      CROSS JOIN UNNEST(fs.plans) AS plan
-
-      WHERE fs.is_deleted = FALSE
-      AND JSON_EXTRACT_SCALAR(plan, '$.planType') = 'plan'
-      ),
-
-      sub_details_deduped AS (
-      SELECT * FROM sub_details WHERE rn = 1
-      )
-
-      SELECT
-      da.report_date,
-      da.subscription_id,
-
-      sd.user_id,
-      prof.url_code AS sign_up_url_code,
-      prof.username AS sign_up_user_username,
-      pprof.email AS sign_up_user_email,
-      oe.context_campaign_campaign AS marketing_campaign,
-      oe.utm_regintent,
-      oe.business_type,
-
-      sd.price,
-      sd.plan_name,
-      sd.plan_interval,
-      sd.trial_starts,
-      sd.trial_ends,
-      sd.effective_trial_end,
-      sd.trial_status,
-
       CASE
       WHEN oe.user_id IS NULL THEN 'event_not_fired'
       WHEN oe.context_campaign_campaign IS NOT NULL THEN 'marketing_campaign'
@@ -104,14 +90,17 @@ view: active_paid_subscribers {
 
       FROM daily_active da
 
-      JOIN sub_details_deduped sd
-      ON sd.subscription_id = da.subscription_id
+      JOIN `dbt_popshop.fact_seller_subscription` fs
+      ON fs.subscription_id = da.subscription_id
+      AND fs.is_deleted = FALSE
+
+      CROSS JOIN UNNEST(fs.plans) AS plan
 
       LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_profiles` prof
-      ON prof.user_id = sd.user_id
+      ON prof.user_id = fs.user_id
 
       LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_private_profiles` pprof
-      ON pprof.user_id = sd.user_id
+      ON pprof.user_id = fs.user_id
 
       LEFT JOIN (
       SELECT *
@@ -122,10 +111,11 @@ view: active_paid_subscribers {
       )
       WHERE rn = 1
       ) oe
-      ON oe.user_id = sd.user_id
+      ON oe.user_id = fs.user_id
 
       WHERE
-      (pprof.email IS NULL OR (
+      JSON_EXTRACT_SCALAR(plan, '$.planType') = 'plan'
+      AND (pprof.email IS NULL OR (
       LOWER(pprof.email) NOT LIKE '%@test.com'
       AND LOWER(pprof.email) NOT LIKE '%@example.com'
       AND LOWER(pprof.email) NOT LIKE '%@popshoplive.com'

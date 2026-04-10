@@ -231,10 +231,10 @@ view: trial_subscription_summary {
   # Card 3 — conversion rate: (trials / subscriptions) * 100
   measure: trial_to_paid_conversion_rate {
     type: number
-    sql: SAFE_DIVIDE(${total_active_trials}, NULLIF(${total_active_subscriptions}, 0)) * 100 ;;
+    sql: SAFE_DIVIDE(${total_active_trials}, NULLIF(${total_active_subscriptions}, 0));;
     label: "Trial → Paid Conversion Rate"
-    description: "(Yesterday's Total Active Trials / Total Active Subscriptions) * 100"
-    value_format_name: decimal_1
+    description: "(Yesterday's Total Active Trials / Total Active Subscriptions)"
+    value_format_name: percent_1
     drill_fields: [drilldown_details*]
   }
 

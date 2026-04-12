@@ -21,6 +21,14 @@ view: onboarding_funnel {
         AND {% condition date_range %} `timestamp` {% endcondition %}
         AND {% condition utm_regintent %} utm_regintent {% endcondition %}
         AND {% condition onboarding_session_id %} onboarding_session_id {% endcondition %}
+    ),
+    marketing_capture AS (
+      SELECT
+      user_id,
+      JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_campaign') AS utm_campaign,
+      JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_source') AS utm_source,
+      JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_regintent') AS utm_regintent
+      FROM `popshoplive-26f81.dbt_popshop.dim_private_profiles`
     )
     SELECT
       pprof.email as user_email,
@@ -30,19 +38,22 @@ view: onboarding_funnel {
       prof.username AS sign_up_user_username,
       pprof.email AS sign_up_user_email,
       oe.marketing_campaign,
-      oe.utm_regintent,
+      COALESCE(oe.utm_regintent, mc.utm_regintent) AS utm_regintent,
       oe.business_type,
       oe.`timestamp`,
       oe.step_name,
       oe.onboarding_session_id,
       CASE
-        WHEN oe.user_id IS NULL THEN 'event_not_fired'
-        WHEN oe.marketing_campaign IS NOT NULL THEN 'marketing_campaign'
-        ELSE 'organic_walk-in'
+      WHEN COALESCE(oe.marketing_campaign, mc.utm_campaign) IS NOT NULL
+      THEN 'marketing_campaign'
+      WHEN mc.utm_source IS NOT NULL
+      THEN 'marketing_campaign'
+      ELSE 'organic_walk-in'
       END AS acquisition_source
     FROM `popshoplive-26f81.dbt_popshop.dim_profiles` prof
     LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_stores` st ON st.store_id = prof.user_id
     LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_private_profiles` pprof ON pprof.user_id = prof.user_id
+    LEFT JOIN marketing_capture mc ON mc.user_id = prof.user_id
     LEFT JOIN onboarding_events oe ON oe.user_id = prof.user_id
     WHERE
       user_type IN ('seller', 'verifiedSeller')

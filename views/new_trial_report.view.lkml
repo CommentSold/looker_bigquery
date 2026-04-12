@@ -27,13 +27,21 @@ view: new_trial_report {
           t1.trial_end IS NOT NULL
           AND JSON_EXTRACT_SCALAR(plan, '$.planType') = 'plan'
           AND {% condition date_range %} TIMESTAMP(t1.initial_start_date) {% endcondition %}
+      ),
+      marketing_capture AS (
+      SELECT
+      user_id,
+      JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_campaign') AS utm_campaign,
+      JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_source') AS utm_source,
+      JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_regintent') AS utm_regintent
+      FROM `popshoplive-26f81.dbt_popshop.dim_private_profiles`
       )
       SELECT
         prof.url_code AS sign_up_url_code,
         prof.username AS sign_up_user_username,
         pprof.email AS sign_up_user_email,
         oe.context_campaign_campaign as marketing_campaign,
-        oe.utm_regintent,
+        COALESCE(oe.utm_regintent, mc.utm_regintent) AS utm_regintent,
         oe.business_type,
 
         CASE
@@ -57,9 +65,11 @@ view: new_trial_report {
         END AS after_7_days,
 
         CASE
-          WHEN oe.user_id IS NULL THEN 'event_not_fired'
-          WHEN oe.context_campaign_campaign IS NOT NULL THEN 'marketing_campaign'
-          ELSE 'organic_walk-in'
+        WHEN COALESCE(oe.context_campaign_campaign, mc.utm_campaign) IS NOT NULL
+        THEN 'marketing_campaign'
+        WHEN mc.utm_source IS NOT NULL
+        THEN 'marketing_campaign'
+        ELSE 'organic_walk-in'
         END AS acquisition_source,
 
         base.id,
@@ -105,6 +115,8 @@ view: new_trial_report {
 
       LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_private_profiles` pprof
         ON pprof.user_id = base.user_id
+
+      LEFT JOIN marketing_capture mc ON mc.user_id = base.user_id
 
       LEFT JOIN (
         SELECT *

@@ -58,3 +58,7 @@ explore: ai_pdf_generations {
   label: "AI PDF Generations"
   group_label: "AI PDF"
 }
+explore: cumulative_creator_signups {
+  label: "Cumulative Creator Signups"
+  group_label: "Subscriptions"
+}

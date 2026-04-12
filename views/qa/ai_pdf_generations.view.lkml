@@ -38,9 +38,9 @@ view: ai_pdf_generations {
       marketing_capture AS (
       SELECT
       user_id,
-      JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_campaign') AS mc_utm_campaign,
-      JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_source') AS mc_utm_source,
-      JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_regintent') AS mc_utm_regintent
+      JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_campaign') AS utm_campaign,
+      JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_source') AS utm_source,
+      JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_regintent') AS utm_regintent
       FROM `popshoplive-26f81.dbt_popshop.dim_private_profiles`
       ),
 
@@ -112,14 +112,16 @@ view: ai_pdf_generations {
 
       -- acquisition fields with fallback for utm_regintent
       oe.context_campaign_campaign AS marketing_campaign,
-      COALESCE(oe.utm_regintent, mc.mc_utm_regintent) AS utm_regintent,
+      COALESCE(oe.utm_regintent, mc.utm_regintent) AS utm_regintent,
       oe.business_type,
 
       CASE
-      WHEN oe.user_id IS NULL THEN 'event_not_fired'
-      WHEN oe.context_campaign_campaign IS NOT NULL THEN 'marketing_campaign'
+      WHEN COALESCE(oe.context_campaign_campaign, mc.utm_campaign) IS NOT NULL
+      THEN 'marketing_campaign'
+      WHEN mc.utm_source IS NOT NULL
+      THEN 'marketing_campaign'
       ELSE 'organic_walk-in'
-      END AS acquisition_source
+      END AS acquisition_source,
 
       FROM base
 

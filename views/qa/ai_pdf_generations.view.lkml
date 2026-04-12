@@ -113,7 +113,7 @@ view: ai_pdf_generations {
       AND LOWER(pprof.email) NOT LIKE '%@commentsold.com'
       ))
       {% if date_range._is_filtered %}
-      AND {% condition date_range %} aipdf.created_at {% endcondition %}
+      AND {% condition date_range %} base.initial_start_date {% endcondition %}
       {% endif %}
 
       ORDER BY aipdf.created_at DESC

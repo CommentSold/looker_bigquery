@@ -1,65 +1,95 @@
 view: ai_pdf_generations {
   filter: date_range {
     type: date
-    description: "Filter by AI PDF created_at date. Use 'is in range' in the UI. Optional."
+    description: "Filter by trial start date (initial_start_date). Use 'is in range' in the UI. Optional."
   }
 
   derived_table: {
     sql:
-      WITH base AS (
+      WITH base_raw AS (
         SELECT
           t1.*,
           plan,
-
-      COALESCE(
-      CASE
-      WHEN t1.cancellation_applied_at IS NOT NULL
-      AND t1.cancellation_applied_at < t1.trial_end
-      THEN t1.cancellation_applied_at
-      END,
-      t1.trial_end
-      ) AS effective_trial_end
-
-      FROM dbt_popshop.fact_seller_subscription t1,
-      UNNEST(t1.plans) AS plan
-
-      WHERE
-      t1.trial_end IS NOT NULL
-      AND JSON_EXTRACT_SCALAR(plan, '$.planType') = 'plan'
+          COALESCE(
+            CASE
+              WHEN t1.cancellation_applied_at IS NOT NULL
+                AND t1.cancellation_applied_at < t1.trial_end
+              THEN t1.cancellation_applied_at
+            END,
+            t1.trial_end
+          ) AS effective_trial_end,
+          JSON_EXTRACT_SCALAR(plan, '$.productName') AS plan_name,
+          JSON_EXTRACT_SCALAR(plan, '$.interval') AS plan_interval
+        FROM dbt_popshop.fact_seller_subscription t1,
+        UNNEST(t1.plans) AS plan
+        WHERE
+          t1.trial_end IS NOT NULL
+          AND JSON_EXTRACT_SCALAR(plan, '$.planType') = 'plan'
       ),
 
-      -- Most recent ai_pdf_generations record per user + total count
+      -- Deduplicate to one row per user (handles multiple 'plan' type entries)
+      base AS (
+      SELECT *
+      FROM base_raw
+      QUALIFY ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY initial_start_date DESC) = 1
+      ),
+
+      -- Marketing capture fallback for utm_regintent
+      marketing_capture AS (
+      SELECT
+      user_id,
+      JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_campaign') AS mc_utm_campaign,
+      JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_source') AS mc_utm_source,
+      JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_regintent') AS mc_utm_regintent
+      FROM `popshoplive-26f81.dbt_popshop.dim_private_profiles`
+      ),
+
+      -- AI PDF stats per user: count completed, count started (all attempts)
+      ai_pdf_user_stats AS (
+      SELECT
+      user_id,
+      COUNT(*) AS total_pdf_generations_started,
+      COUNTIF(status = 'success') AS total_pdfs_completed
+      FROM `popshoplive-26f81.commentsold.ai_pdf_generations`
+      GROUP BY user_id
+      ),
+
+      -- Most recent ai_pdf_generations record per user
       ai_pdf_latest AS (
       SELECT
       user_id,
       session_id,
       created_at,
-      status,
-      COUNT(*) OVER (PARTITION BY user_id) AS total_pdfs_generated
+      status
       FROM `popshoplive-26f81.commentsold.ai_pdf_generations`
       QUALIFY ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY created_at DESC) = 1
-      )
+      ),
 
+      -- Trial users with any AI PDF activity (all statuses: success, failed, pdf_summary_ready)
+      trial_pdf_users AS (
       SELECT
       -- ai_pdf fields
       aipdf.session_id,
-      aipdf.created_at        AS ai_pdf_created_at,
-      aipdf.status            AS ai_pdf_status,
-      aipdf.total_pdfs_generated,
+      aipdf.created_at AS ai_pdf_created_at,
+      aipdf.status AS ai_pdf_status,
+
+      -- PDF generation stats per user
+      stats.total_pdfs_completed,
+      stats.total_pdf_generations_started,
 
       -- subscription / trial fields
       base.id,
       base.subscription_id,
       base.user_id,
-      base.status       AS subscription_status,
+      base.status AS subscription_status,
       base.initial_start_date AS trial_starts,
-      base.trial_end          AS trial_ends,
+      base.trial_end AS trial_ends,
       base.effective_trial_end,
       base.cancellation_applied_at,
 
       COALESCE(base.discounted_price, base.price + base.tax_amount) AS price,
-      JSON_EXTRACT_SCALAR(plan, '$.productName') AS plan_name,
-      JSON_EXTRACT_SCALAR(plan, '$.interval')    AS plan_interval,
+      base.plan_name,
+      base.plan_interval,
 
       CASE
       WHEN base.trial_end IS NULL THEN 'No trial'
@@ -67,43 +97,59 @@ view: ai_pdf_generations {
       ELSE 'Started'
       END AS trial_status,
 
-      -- profile fields
-      prof.url_code  AS sign_up_url_code,
-      prof.username  AS sign_up_user_username,
-      pprof.email    AS sign_up_user_email,
+      -- User's current status: Subscriber or Cancelled
+      CASE
+      WHEN base.status = 'active' THEN 'Subscriber'
+      WHEN base.status IN ('canceled', 'cancelled') THEN 'Cancelled'
+      WHEN base.cancellation_applied_at IS NOT NULL THEN 'Cancelled'
+      ELSE COALESCE(base.status, 'Unknown')
+      END AS user_current_status,
 
-      -- acquisition fields
+      -- profile fields
+      prof.url_code AS sign_up_url_code,
+      prof.username AS sign_up_user_username,
+      pprof.email AS sign_up_user_email,
+
+      -- acquisition fields with fallback for utm_regintent
       oe.context_campaign_campaign AS marketing_campaign,
-      oe.utm_regintent,
+      COALESCE(oe.utm_regintent, mc.mc_utm_regintent) AS utm_regintent,
       oe.business_type,
 
       CASE
-      WHEN oe.user_id IS NULL                       THEN 'event_not_fired'
+      WHEN oe.user_id IS NULL THEN 'event_not_fired'
       WHEN oe.context_campaign_campaign IS NOT NULL THEN 'marketing_campaign'
       ELSE 'organic_walk-in'
       END AS acquisition_source
 
-      FROM ai_pdf_latest aipdf
+      FROM base
 
-      -- Join to subscription (LEFT — keep pdf records even if no sub)
-      LEFT JOIN base
-      ON base.user_id = aipdf.user_id
+      -- Join to ai_pdf_latest (INNER — only users who started a trial AND have PDF activity)
+      INNER JOIN ai_pdf_latest aipdf
+      ON aipdf.user_id = base.user_id
+
+      -- Join to user stats for counts
+      LEFT JOIN ai_pdf_user_stats stats
+      ON stats.user_id = base.user_id
 
       LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_profiles` prof
-      ON prof.user_id = aipdf.user_id
+      ON prof.user_id = base.user_id
 
       LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_private_profiles` pprof
-      ON pprof.user_id = aipdf.user_id
+      ON pprof.user_id = base.user_id
+
+      -- Marketing capture fallback
+      LEFT JOIN marketing_capture mc
+      ON mc.user_id = base.user_id
 
       LEFT JOIN (
       SELECT *
       FROM (
       SELECT *,
-      ROW_NUMBER() OVER (PARTITION BY user_id) AS rn
+      ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY timestamp DESC) AS rn
       FROM `popshoplive-26f81.popstore.popstore_onboarding_screen_action`
       )
       WHERE rn = 1
-      ) oe ON oe.user_id = aipdf.user_id
+      ) oe ON oe.user_id = base.user_id
 
       WHERE
       (pprof.email IS NULL OR (
@@ -112,21 +158,31 @@ view: ai_pdf_generations {
       AND LOWER(pprof.email) NOT LIKE '%@popshoplive.com'
       AND LOWER(pprof.email) NOT LIKE '%@commentsold.com'
       ))
-      {% if date_range._is_filtered %}
-      AND {% condition date_range %} base.initial_start_date {% endcondition %}
-      {% endif %}
+      )
 
-      ORDER BY aipdf.created_at DESC
+      SELECT *
+      FROM trial_pdf_users
+      WHERE 1=1
+      {% if date_range._is_filtered %}
+      AND {% condition date_range %} trial_starts {% endcondition %}
+      {% endif %}
+      ORDER BY ai_pdf_created_at DESC
       ;;
   }
 
   # ——— Primary Key ———
 
+  dimension: user_id {
+    type: string
+    sql: ${TABLE}.user_id ;;
+    primary_key: yes
+  }
+
   dimension: session_id {
     type: string
     sql: ${TABLE}.session_id ;;
-    primary_key: yes
-    hidden: yes
+    label: "Latest AI PDF Session ID"
+    description: "Most recent AI PDF session_id for this user"
   }
 
   # ——— AI PDF Dimensions ———
@@ -140,27 +196,28 @@ view: ai_pdf_generations {
     label: "AI PDF Created"
   }
 
-  dimension: total_pdfs_generated {
+  dimension: total_pdfs_completed {
     type: number
-    sql: ${TABLE}.total_pdfs_generated ;;
-    label: "Total PDFs Generated"
-    description: "Total number of AI PDF generation attempts by this user across all time"
+    sql: ${TABLE}.total_pdfs_completed ;;
+    label: "PDFs Successfully Generated"
+    description: "Number of PDFs successfully generated (completed) by this user"
+  }
+
+  dimension: total_pdf_generations_started {
+    type: number
+    sql: ${TABLE}.total_pdf_generations_started ;;
+    label: "PDF Generations Started"
+    description: "Total number of PDF generation attempts started by this user"
   }
 
   dimension: ai_pdf_status {
     type: string
     sql: ${TABLE}.ai_pdf_status ;;
     label: "AI PDF Status"
-    # ✅ Color by utm_regintent is applied at the chart level in Looker
-    # but we expose utm_regintent as the pivot/color dimension below
+    description: "Status values: 'success' (completed), 'pdf_summary_ready' (started/in progress), 'failed'"
   }
 
   # ——— User / Subscription Dimensions ———
-
-  dimension: user_id {
-    type: string
-    sql: ${TABLE}.user_id ;;
-  }
 
   dimension: subscription_id {
     type: string
@@ -170,6 +227,13 @@ view: ai_pdf_generations {
   dimension: subscription_status {
     type: string
     sql: ${TABLE}.subscription_status ;;
+  }
+
+  dimension: user_current_status {
+    type: string
+    sql: ${TABLE}.user_current_status ;;
+    label: "User Current Status"
+    description: "Whether the user is currently a Subscriber or Cancelled"
   }
 
   dimension: trial_status {
@@ -182,6 +246,8 @@ view: ai_pdf_generations {
     convert_tz: no
     sql: ${TABLE}.trial_starts ;;
     timeframes: [date, week, month, quarter, year]
+    label: "Trial Start"
+    description: "Use this date dimension to compare with trial_start graph"
   }
 
   dimension_group: trial_ends_at {
@@ -237,12 +303,11 @@ view: ai_pdf_generations {
     sql: ${TABLE}.marketing_campaign ;;
   }
 
-  # ✅ utm_regintent — use this as the "Color" dimension in Looker chart config
   dimension: utm_regintent {
     type: string
     sql: ${TABLE}.utm_regintent ;;
     label: "UTM Regintent"
-    description: "Use as the Color dimension in chart config to color bars/lines by intent."
+    description: "Use as the Color dimension in chart config. Falls back to onboardingMarketingCapture if missing."
   }
 
   dimension: business_type {
@@ -276,7 +341,7 @@ view: ai_pdf_generations {
   measure: total_completed {
     type: count_distinct
     sql: ${TABLE}.session_id ;;
-    filters: [ai_pdf_status: "completed"]
+    filters: [ai_pdf_status: "success"]
     label: "Completed Generations"
     drill_fields: [drill_details*]
   }
@@ -289,11 +354,54 @@ view: ai_pdf_generations {
     drill_fields: [drill_details*]
   }
 
+  measure: total_in_progress {
+    type: count_distinct
+    sql: ${TABLE}.session_id ;;
+    filters: [ai_pdf_status: "pdf_summary_ready"]
+    label: "In Progress (Started)"
+    description: "PDF generations that started but haven't completed yet"
+    drill_fields: [drill_details*]
+  }
+
   measure: completion_rate {
     type: number
     sql: SAFE_DIVIDE(${total_completed}, NULLIF(${total_ai_pdf_generations}, 0)) * 100 ;;
     label: "Completion Rate (%)"
     value_format_name: decimal_1
+    drill_fields: [drill_details*]
+  }
+
+  measure: sum_pdfs_completed {
+    type: sum
+    sql: ${TABLE}.total_pdfs_completed ;;
+    label: "Total PDFs Completed (Sum)"
+    description: "Sum of all successfully generated PDFs across users"
+    drill_fields: [drill_details*]
+  }
+
+  measure: sum_pdf_generations_started {
+    type: sum
+    sql: ${TABLE}.total_pdf_generations_started ;;
+    label: "Total PDF Generations Started (Sum)"
+    description: "Sum of all PDF generation attempts across users"
+    drill_fields: [drill_details*]
+  }
+
+  measure: count_subscribers {
+    type: count_distinct
+    sql: ${TABLE}.user_id ;;
+    filters: [user_current_status: "Subscriber"]
+    label: "Current Subscribers"
+    description: "Count of users who are currently subscribed"
+    drill_fields: [drill_details*]
+  }
+
+  measure: count_cancelled {
+    type: count_distinct
+    sql: ${TABLE}.user_id ;;
+    filters: [user_current_status: "Cancelled"]
+    label: "Cancelled Users"
+    description: "Count of users who have cancelled"
     drill_fields: [drill_details*]
   }
 
@@ -308,7 +416,9 @@ view: ai_pdf_generations {
       session_id,
       ai_pdf_created_date,
       ai_pdf_status,
-      total_pdfs_generated,
+      total_pdfs_completed,
+      total_pdf_generations_started,
+      user_current_status,
       subscription_id,
       subscription_status,
       plan_name,

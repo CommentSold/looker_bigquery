@@ -105,6 +105,24 @@ view: cumulative_creator_signups {
       EXTRACT(MONTH FROM month_date) AS month_number,
       month_date AS first_day_of_month
       FROM UNNEST(GENERATE_DATE_ARRAY('2025-01-01', '2027-12-01', INTERVAL 1 MONTH)) AS month_date
+      ),
+
+      -- Target/Quota data for 2026
+      targets AS (
+      SELECT * FROM UNNEST([
+          STRUCT(2026 AS year, 1 AS month_number, 14000 AS cumulative_signups_target, 1254 AS monthly_signups_target, 213 AS monthly_paid_subscribers_target),
+          STRUCT(2026 AS year, 2 AS month_number, 16000 AS cumulative_signups_target, 2008 AS monthly_signups_target, 436 AS monthly_paid_subscribers_target),
+          STRUCT(2026 AS year, 3 AS month_number, 18000 AS cumulative_signups_target, 2008 AS monthly_signups_target, 528 AS monthly_paid_subscribers_target),
+          STRUCT(2026 AS year, 4 AS month_number, 21000 AS cumulative_signups_target, 2008 AS monthly_signups_target, 565 AS monthly_paid_subscribers_target),
+          STRUCT(2026 AS year, 5 AS month_number, 24000 AS cumulative_signups_target, 2504 AS monthly_signups_target, 749 AS monthly_paid_subscribers_target),
+          STRUCT(2026 AS year, 6 AS month_number, 27000 AS cumulative_signups_target, 2504 AS monthly_signups_target, 749 AS monthly_paid_subscribers_target),
+          STRUCT(2026 AS year, 7 AS month_number, 30333 AS cumulative_signups_target, 3002 AS monthly_signups_target, 896 AS monthly_paid_subscribers_target),
+          STRUCT(2026 AS year, 8 AS month_number, 33667 AS cumulative_signups_target, 3002 AS monthly_signups_target, 896 AS monthly_paid_subscribers_target),
+          STRUCT(2026 AS year, 9 AS month_number, 37000 AS cumulative_signups_target, 3002 AS monthly_signups_target, 896 AS monthly_paid_subscribers_target),
+          STRUCT(2026 AS year, 10 AS month_number, 39667 AS cumulative_signups_target, 3002 AS monthly_signups_target, 896 AS monthly_paid_subscribers_target),
+          STRUCT(2026 AS year, 11 AS month_number, 42333 AS cumulative_signups_target, 3002 AS monthly_signups_target, 896 AS monthly_paid_subscribers_target),
+          STRUCT(2026 AS year, 12 AS month_number, 45000 AS cumulative_signups_target, 3002 AS monthly_signups_target, 896 AS monthly_paid_subscribers_target)
+        ])
       )
 
       SELECT
@@ -115,7 +133,11 @@ view: cumulative_creator_signups {
       cp.actual_cumulative_creator_signups,
       mcs.actual_creator_signups,
       mpc.actual_paid_creators,
-      mpc.cumulative_paid_creators
+      mpc.cumulative_paid_creators,
+      -- Target columns
+      t.cumulative_signups_target,
+      t.monthly_signups_target,
+      t.monthly_paid_subscribers_target
       FROM month_spine ms
       LEFT JOIN cumulative_profiles cp
       ON ms.year = cp.yr_number
@@ -126,8 +148,11 @@ view: cumulative_creator_signups {
       LEFT JOIN monthly_paid_creators mpc
       ON ms.year = mpc.yr_number
       AND ms.month_number = mpc.mn_number
+      LEFT JOIN targets t
+      ON ms.year = t.year
+      AND ms.month_number = t.month_number
       WHERE ms.year >= 2025
-      AND cp.actual_cumulative_creator_signups IS NOT NULL  -- Only include months with actual data
+      AND (cp.actual_cumulative_creator_signups IS NOT NULL OR t.cumulative_signups_target IS NOT NULL)
       ORDER BY ms.year, ms.month_number
       ;;
   }
@@ -164,7 +189,7 @@ view: cumulative_creator_signups {
     label: "Year"
   }
 
-  # ——— Creator Sign-up Dimensions ———
+  # ——— Creator Sign-up Dimensions (hidden) ———
 
   dimension: monthly_creator_signups_dim {
     type: number
@@ -189,7 +214,7 @@ view: cumulative_creator_signups {
     hidden: yes
   }
 
-  # ——— Paid Creator Dimensions ———
+  # ——— Paid Creator Dimensions (hidden) ———
 
   dimension: actual_paid_creators_dim {
     type: number
@@ -207,12 +232,32 @@ view: cumulative_creator_signups {
     hidden: yes
   }
 
-  # ——— Measures ———
+  # ——— Target Dimensions (hidden) ———
+
+  dimension: cumulative_signups_target_dim {
+    type: number
+    sql: ${TABLE}.cumulative_signups_target ;;
+    hidden: yes
+  }
+
+  dimension: monthly_signups_target_dim {
+    type: number
+    sql: ${TABLE}.monthly_signups_target ;;
+    hidden: yes
+  }
+
+  dimension: monthly_paid_subscribers_target_dim {
+    type: number
+    sql: ${TABLE}.monthly_paid_subscribers_target ;;
+    hidden: yes
+  }
+
+  # ——— Actual Measures ———
 
   measure: total_monthly_creator_signups {
     type: sum
     sql: ${TABLE}.monthly_creator_signups ;;
-    label: "Monthly Creator Sign-ups"
+    label: "Monthly Creator Sign-ups: Actual"
     description: "Total new creator sign-ups in the selected period"
     drill_fields: [first_day_of_month_date, month_number, year, total_monthly_creator_signups]
   }
@@ -236,7 +281,7 @@ view: cumulative_creator_signups {
   measure: total_monthly_paid_creators {
     type: sum
     sql: ${TABLE}.actual_paid_creators ;;
-    label: "Monthly Paid Creators"
+    label: "Monthly New Paid Subscribers: Actual"
     description: "Total creators who made their first payment in the selected period"
     drill_fields: [first_day_of_month_date, month_number, year, total_monthly_paid_creators]
   }
@@ -247,6 +292,32 @@ view: cumulative_creator_signups {
     label: "Cumulative Paid Creators"
     description: "Running total of paid creators (use with single month selection)"
     drill_fields: [first_day_of_month_date, month_number, year, cumulative_paid_creators]
+  }
+
+  # ——— Target Measures ———
+
+  measure: cumulative_signups_target {
+    type: max
+    sql: ${TABLE}.cumulative_signups_target ;;
+    label: "Cumulative Creator Sign-ups: Target"
+    description: "Target for cumulative creator sign-ups"
+    drill_fields: [first_day_of_month_date, month_number, year, cumulative_signups_target]
+  }
+
+  measure: monthly_signups_target {
+    type: sum
+    sql: ${TABLE}.monthly_signups_target ;;
+    label: "Monthly Creator Sign-ups: Target"
+    description: "Target for monthly new creator sign-ups"
+    drill_fields: [first_day_of_month_date, month_number, year, monthly_signups_target]
+  }
+
+  measure: monthly_paid_subscribers_target {
+    type: sum
+    sql: ${TABLE}.monthly_paid_subscribers_target ;;
+    label: "Monthly New Paid Subscribers: Target"
+    description: "Target for monthly new paid subscribers"
+    drill_fields: [first_day_of_month_date, month_number, year, monthly_paid_subscribers_target]
   }
 
   # ——— Calculated Measures ———
@@ -265,5 +336,28 @@ view: cumulative_creator_signups {
     label: "Cumulative Conversion Rate (%)"
     description: "Overall percentage of sign-ups that converted to paid"
     value_format_name: decimal_1
+  }
+
+  # ——— Variance Measures ———
+
+  measure: cumulative_signups_variance {
+    type: number
+    sql: ${cumulative_creator_signups} - ${cumulative_signups_target} ;;
+    label: "Cumulative Sign-ups Variance"
+    description: "Actual - Target for cumulative sign-ups"
+  }
+
+  measure: monthly_signups_variance {
+    type: number
+    sql: ${total_monthly_creator_signups} - ${monthly_signups_target} ;;
+    label: "Monthly Sign-ups Variance"
+    description: "Actual - Target for monthly sign-ups"
+  }
+
+  measure: monthly_paid_variance {
+    type: number
+    sql: ${total_monthly_paid_creators} - ${monthly_paid_subscribers_target} ;;
+    label: "Monthly Paid Subscribers Variance"
+    description: "Actual - Target for monthly paid subscribers"
   }
 }

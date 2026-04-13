@@ -88,6 +88,24 @@ view: monthly_paid_subscribers {
       EXTRACT(MONTH FROM month_date) AS month_number,
       month_date AS first_day_of_month
       FROM UNNEST(GENERATE_DATE_ARRAY('2025-01-01', '2027-12-01', INTERVAL 1 MONTH)) AS month_date
+      ),
+
+      -- Target/Quota data for 2026
+      targets AS (
+      SELECT * FROM UNNEST([
+      STRUCT(2026 AS year, 1 AS month_number, 298 AS paid_subscribers_target),
+      STRUCT(2026 AS year, 2 AS month_number, 734 AS paid_subscribers_target),
+      STRUCT(2026 AS year, 3 AS month_number, 1262 AS paid_subscribers_target),
+      STRUCT(2026 AS year, 4 AS month_number, 1813 AS paid_subscribers_target),
+      STRUCT(2026 AS year, 5 AS month_number, 2532 AS paid_subscribers_target),
+      STRUCT(2026 AS year, 6 AS month_number, 3230 AS paid_subscribers_target),
+      STRUCT(2026 AS year, 7 AS month_number, 4055 AS paid_subscribers_target),
+      STRUCT(2026 AS year, 8 AS month_number, 4851 AS paid_subscribers_target),
+      STRUCT(2026 AS year, 9 AS month_number, 5619 AS paid_subscribers_target),
+      STRUCT(2026 AS year, 10 AS month_number, 6354 AS paid_subscribers_target),
+      STRUCT(2026 AS year, 11 AS month_number, 7057 AS paid_subscribers_target),
+      STRUCT(2026 AS year, 12 AS month_number, 7729 AS paid_subscribers_target)
+      ])
       )
 
       SELECT
@@ -96,12 +114,17 @@ view: monthly_paid_subscribers {
       om.year,
       ms.actual_paid_subscribers,
       ms.monthly_plan_subscribers,
-      ms.yearly_plan_subscribers
+      ms.yearly_plan_subscribers,
+      t.paid_subscribers_target
       FROM output_months om
-      INNER JOIN monthly_summary ms
+      LEFT JOIN monthly_summary ms
       ON om.year = ms.invoice_year
       AND om.month_number = ms.invoice_month
+      LEFT JOIN targets t
+      ON om.year = t.year
+      AND om.month_number = t.month_number
       WHERE om.year >= 2025
+      AND (ms.actual_paid_subscribers IS NOT NULL OR t.paid_subscribers_target IS NOT NULL)
       ORDER BY om.year, om.month_number
       ;;
   }
@@ -158,7 +181,13 @@ view: monthly_paid_subscribers {
     hidden: yes
   }
 
-  # ——— Measures ———
+  dimension: paid_subscribers_target_dim {
+    type: number
+    sql: ${TABLE}.paid_subscribers_target ;;
+    hidden: yes
+  }
+
+  # ——— Actual Measures ———
 
   measure: total_paid_subscribers {
     type: sum
@@ -190,5 +219,32 @@ view: monthly_paid_subscribers {
     label: "Paid Subscribers (Latest)"
     description: "Use for single month view - shows the actual count"
     drill_fields: [first_day_of_month_date, month_number, year, max_paid_subscribers]
+  }
+
+  # ——— Target Measures ———
+
+  measure: paid_subscribers_target {
+    type: max
+    sql: ${TABLE}.paid_subscribers_target ;;
+    label: "Paid Creators on Platform: Target"
+    description: "Target for paying subscribers at end of month"
+    drill_fields: [first_day_of_month_date, month_number, year, paid_subscribers_target]
+  }
+
+  # ——— Variance Measures ———
+
+  measure: paid_subscribers_variance {
+    type: number
+    sql: ${total_paid_subscribers} - ${paid_subscribers_target} ;;
+    label: "Paid Subscribers Variance"
+    description: "Actual - Target for paying subscribers"
+  }
+
+  measure: paid_subscribers_pct_of_target {
+    type: number
+    sql: SAFE_DIVIDE(${total_paid_subscribers}, NULLIF(${paid_subscribers_target}, 0)) * 100 ;;
+    label: "% of Target"
+    description: "Actual as percentage of target"
+    value_format_name: decimal_1
   }
 }

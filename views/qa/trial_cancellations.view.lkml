@@ -84,6 +84,7 @@ view: trial_cancellations {
       AND (
       fs.cancelled_at <= fs.trial_end
       OR fs.current_period_end = fs.trial_end
+      OR (fs.status = 'unpaid' AND fs.cancelled_at IS NULL AND fs.trial_end <= CURRENT_TIMESTAMP())
       )
       AND JSON_EXTRACT_SCALAR(plan, '$.planType') = 'plan'
       AND (pprof.email IS NULL OR (

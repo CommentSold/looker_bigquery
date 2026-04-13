@@ -62,3 +62,7 @@ explore: cumulative_creator_signups {
   label: "Cumulative Creator Signups"
   group_label: "Subscriptions"
 }
+explore: monthly_paid_subscribers {
+  label: "Monthly Paid Subscribers"
+  group_label: "Subscriptions"
+}

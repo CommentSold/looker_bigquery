@@ -105,15 +105,21 @@ view: ai_pdf_generations {
       ELSE COALESCE(base.status, 'Unknown')
       END AS user_current_status,
 
+      -- Boolean flag for paying subscriber (for drill down)
+      CASE
+      WHEN base.status = 'active' THEN 'Yes'
+      ELSE 'No'
+      END AS is_subscriber,
+
       -- profile fields
       prof.url_code AS sign_up_url_code,
       prof.username AS sign_up_user_username,
       pprof.email AS sign_up_user_email,
 
-      -- acquisition fields with fallback for utm_regintent
-      oe.context_campaign_campaign AS marketing_campaign,
-      COALESCE(oe.utm_regintent, mc.utm_regintent) AS utm_regintent,
-      oe.business_type,
+      -- acquisition fields with fallback for utm_regintent (COALESCE nulls to 'generic')
+      COALESCE(NULLIF(oe.context_campaign_campaign, ''), 'generic') AS marketing_campaign,
+      COALESCE(NULLIF(oe.utm_regintent, ''), NULLIF(mc.utm_regintent, ''), 'generic') AS utm_regintent,
+      COALESCE(NULLIF(oe.business_type, ''), 'generic') AS business_type,
 
       CASE
       WHEN COALESCE(oe.context_campaign_campaign, mc.utm_campaign) IS NOT NULL
@@ -165,6 +171,8 @@ view: ai_pdf_generations {
       SELECT *
       FROM trial_pdf_users
       WHERE 1=1
+      -- Filter to only pdf_creator and generic rows (nulls/empties are already converted to 'generic')
+      AND utm_regintent IN ('pdf_creator', 'generic')
       {% if date_range._is_filtered %}
       AND {% condition date_range %} trial_starts {% endcondition %}
       {% endif %}
@@ -238,6 +246,13 @@ view: ai_pdf_generations {
     description: "Whether the user is currently a Subscriber or Cancelled"
   }
 
+  dimension: is_subscriber {
+    type: string
+    sql: ${TABLE}.is_subscriber ;;
+    label: "Subscriber"
+    description: "Yes if the user is a paying subscriber, No otherwise"
+  }
+
   dimension: trial_status {
     type: string
     sql: ${TABLE}.trial_status ;;
@@ -303,18 +318,20 @@ view: ai_pdf_generations {
   dimension: marketing_campaign {
     type: string
     sql: ${TABLE}.marketing_campaign ;;
+    description: "Defaults to 'generic' if null"
   }
 
   dimension: utm_regintent {
     type: string
     sql: ${TABLE}.utm_regintent ;;
     label: "UTM Regintent"
-    description: "Use as the Color dimension in chart config. Falls back to onboardingMarketingCapture if missing."
+    description: "Use as the Color dimension in chart config. Falls back to onboardingMarketingCapture if missing, then to 'generic' if null."
   }
 
   dimension: business_type {
     type: string
     sql: ${TABLE}.business_type ;;
+    description: "Defaults to 'generic' if null"
   }
 
   dimension: acquisition_source {
@@ -415,6 +432,7 @@ view: ai_pdf_generations {
       sign_up_user_username,
       sign_up_user_email,
       sign_up_user_url,
+      is_subscriber,
       session_id,
       ai_pdf_created_date,
       ai_pdf_status,

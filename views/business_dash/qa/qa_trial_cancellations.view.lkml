@@ -1,4 +1,4 @@
-view: trial_cancellations {
+view: qa_trial_cancellations {
   derived_table: {
     sql:
       SELECT

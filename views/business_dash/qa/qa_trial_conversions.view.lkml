@@ -1,4 +1,4 @@
-view: test_trial {
+view: qa_trial_conversions {
   derived_table: {
     sql:
       WITH subscriptions AS (

@@ -1,4 +1,4 @@
-view: ai_pdf_generations {
+view: qa_ai_pdf_generations {
   filter: date_range {
     type: date
     description: "Filter by trial start date (initial_start_date). Use 'is in range' in the UI. Optional."

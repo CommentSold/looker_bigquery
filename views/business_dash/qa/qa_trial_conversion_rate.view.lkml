@@ -1,4 +1,4 @@
-view: trial_conversion_rate {
+view: qa_trial_conversion_rate {
   derived_table: {
     sql:
       WITH all_trials AS (

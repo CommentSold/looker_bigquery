@@ -1,4 +1,4 @@
-view: trial_report {
+view: qa_trial_report {
   filter: date_range {
     type: date
     description: "Filter events by date range. Use 'is in range' in the UI to pick start and end. Optional."

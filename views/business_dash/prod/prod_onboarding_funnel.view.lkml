@@ -1,4 +1,4 @@
-view: onboarding_funnel {
+view: prod_onboarding_funnel {
   filter: date_range {
     type: date
     description: "Filter events by date range. Use 'is in range' in the UI to pick start and end. Optional."

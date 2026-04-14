@@ -1,4 +1,4 @@
-view: active_paid_subscribers {
+view: prod_active_paid_subscribers {
   derived_table: {
     sql:
       WITH date_spine AS (

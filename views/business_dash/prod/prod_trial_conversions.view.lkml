@@ -1,4 +1,4 @@
-view: trial_conversions {
+view: prod_trial_conversions {
   derived_table: {
     sql:
       WITH subscriptions AS (
@@ -34,6 +34,7 @@ view: trial_conversions {
       GROUP BY 1, 2
       ),
 
+      -- Only invoices where amount_due > 0 (excludes $0 trial invoices)
       billable_invoices AS (
       SELECT
       invoice_id,
@@ -43,25 +44,31 @@ view: trial_conversions {
       WHERE max_amount_due > 0
       ),
 
-      -- PAID: Check if invoice was ever paid, use invoice_created_at as event date
-      paid_invoices AS (
-      SELECT DISTINCT
+      -- PAID: first paid event per billable invoice
+      first_paid_event_per_invoice AS (
+      SELECT
       ih.invoice_id,
-      ih.subscription_id
+      ih.subscription_id,
+      ih.updated_at AS paid_at,
+      ROW_NUMBER() OVER (
+      PARTITION BY ih.invoice_id
+      ORDER BY ih.updated_at ASC
+      ) AS rn
       FROM invoice_history ih
+      JOIN billable_invoices bi
+      ON ih.invoice_id = bi.invoice_id
+      AND ih.subscription_id = bi.subscription_id
       WHERE ih.status = 'paid'
       AND ih.amount_paid > 0
       ),
 
       paid_billable_invoices AS (
       SELECT
-      bi.invoice_id,
-      bi.subscription_id,
-      bi.invoice_created_at AS paid_at
-      FROM billable_invoices bi
-      INNER JOIN paid_invoices pi
-      ON bi.invoice_id = pi.invoice_id
-      AND bi.subscription_id = pi.subscription_id
+      invoice_id,
+      subscription_id,
+      paid_at
+      FROM first_paid_event_per_invoice
+      WHERE rn = 1
       ),
 
       first_paid_conversion_per_sub AS (
@@ -78,70 +85,8 @@ view: trial_conversions {
       AND p.paid_at >= s.trial_end_ts
       ),
 
-      paid_conversions AS (
-      SELECT
-      subscription_id,
-      paid_at AS event_at,
-      'paid' AS invoice_status
-      FROM first_paid_conversion_per_sub
-      WHERE rn = 1
-      ),
-
-      -- OPEN, DRAFT, UNCOLLECTIBLE: Use invoice_created_at as event date
-      latest_status_per_invoice AS (
-      SELECT
-      ih.invoice_id,
-      ih.subscription_id,
-      ih.status,
-      ROW_NUMBER() OVER (
-      PARTITION BY ih.invoice_id
-      ORDER BY ih.updated_at DESC
-      ) AS rn
-      FROM invoice_history ih
-      JOIN billable_invoices bi
-      ON ih.invoice_id = bi.invoice_id
-      AND ih.subscription_id = bi.subscription_id
-      ),
-
-      open_or_other_billable_invoices AS (
-      SELECT
-      lsi.invoice_id,
-      lsi.subscription_id,
-      lsi.status,
-      bi.invoice_created_at
-      FROM latest_status_per_invoice lsi
-      JOIN billable_invoices bi
-      ON lsi.invoice_id = bi.invoice_id
-      AND lsi.subscription_id = bi.subscription_id
-      WHERE lsi.rn = 1
-      AND lsi.status IN ('open', 'draft', 'uncollectible')
-      ),
-
-      first_open_or_other_per_sub AS (
-      SELECT
-      s.subscription_id,
-      o.invoice_created_at AS event_at,
-      o.status AS invoice_status,
-      ROW_NUMBER() OVER (
-      PARTITION BY s.subscription_id, o.status
-      ORDER BY o.invoice_created_at ASC
-      ) AS rn
-      FROM subscriptions s
-      JOIN open_or_other_billable_invoices o
-      ON s.subscription_id = o.subscription_id
-      AND o.invoice_created_at >= s.trial_end_ts
-      ),
-
-      open_or_other_conversions AS (
-      SELECT
-      subscription_id,
-      event_at,
-      invoice_status
-      FROM first_open_or_other_per_sub
-      WHERE rn = 1
-      ),
-
-      -- UNPAID: already uses invoice_created_at
+      -- UNPAID: subscriptions with status='unpaid' that have a billable invoice
+      -- but did NOT appear in paid_conversions
       unpaid_subs AS (
       SELECT
       s.subscription_id,
@@ -156,8 +101,9 @@ view: trial_conversions {
       ON bi.subscription_id = s.subscription_id
       AND bi.invoice_created_at >= s.trial_end_ts
       WHERE s.sub_status = 'unpaid'
-      AND s.subscription_id NOT IN (SELECT subscription_id FROM paid_conversions)
-      AND s.subscription_id NOT IN (SELECT subscription_id FROM open_or_other_conversions)
+      AND s.subscription_id NOT IN (
+      SELECT subscription_id FROM first_paid_conversion_per_sub WHERE rn = 1
+      )
       ),
 
       unpaid_conversions AS (
@@ -169,10 +115,18 @@ view: trial_conversions {
       WHERE rn = 1
       ),
 
+      paid_conversions AS (
+      SELECT
+      subscription_id,
+      paid_at AS event_at,
+      'paid' AS invoice_status
+      FROM first_paid_conversion_per_sub
+      WHERE rn = 1
+      ),
+
+      -- UNION paid + unpaid only
       combined AS (
       SELECT * FROM paid_conversions
-      UNION ALL
-      SELECT * FROM open_or_other_conversions
       UNION ALL
       SELECT * FROM unpaid_conversions
       )
@@ -181,6 +135,8 @@ view: trial_conversions {
       combined.subscription_id,
       combined.event_at,
       combined.invoice_status,
+
+      -- Drilldown fields from related tables
       fs.user_id,
       prof.url_code AS sign_up_url_code,
       prof.username AS sign_up_user_username,
@@ -188,11 +144,13 @@ view: trial_conversions {
       oe.context_campaign_campaign AS marketing_campaign,
       oe.utm_regintent,
       oe.business_type,
+
       COALESCE(fs.discounted_price, fs.price + fs.tax_amount) AS price,
       JSON_EXTRACT_SCALAR(plan, '$.productName') AS plan_name,
       JSON_EXTRACT_SCALAR(plan, '$.interval') AS plan_interval,
       fs.initial_start_date AS trial_starts,
       fs.trial_end AS trial_ends,
+
       COALESCE(
       CASE
       WHEN fs.cancellation_applied_at IS NOT NULL
@@ -201,6 +159,7 @@ view: trial_conversions {
       END,
       fs.trial_end
       ) AS effective_trial_end,
+
       CASE
       WHEN fs.trial_end IS NULL THEN 'No trial'
       WHEN DATE(COALESCE(
@@ -213,6 +172,7 @@ view: trial_conversions {
       )) <= CURRENT_DATE() THEN 'Ended'
       ELSE 'Started'
       END AS trial_status,
+
       CASE
       WHEN oe.user_id IS NULL THEN 'event_not_fired'
       WHEN oe.context_campaign_campaign IS NOT NULL THEN 'marketing_campaign'
@@ -253,7 +213,7 @@ view: trial_conversions {
       AND LOWER(pprof.email) NOT LIKE '%@commentsold.com'
       ))
       {% if date_range._is_filtered %}
-      AND {% condition date_range %} TIMESTAMP(combined.event_at) {% endcondition %}
+      AND {% condition date_range %} TIMESTAMP(fs.initial_start_date) {% endcondition %}
       {% endif %}
       ;;
   }
@@ -262,7 +222,7 @@ view: trial_conversions {
 
   filter: date_range {
     type: date
-    description: "Filter events by date range. Use 'is in range' in the UI to pick start and end. Optional."
+    description: "Filter by trial start date. Use 'is in range' in the UI to pick start and end. Optional."
   }
 
   # ——— Dimensions ———
@@ -284,13 +244,13 @@ view: trial_conversions {
     timeframes: [raw, time, date, week, month, quarter, year]
     datatype: timestamp
     sql: ${TABLE}.event_at ;;
-    description: "Date of the conversion event (invoice creation date)"
+    description: "Timestamp of the conversion event (paid_at for paid, invoice_created_at for unpaid)"
   }
 
   dimension: invoice_status {
     type: string
     sql: ${TABLE}.invoice_status ;;
-    description: "Invoice status: paid, open, draft, uncollectible, or unpaid. Pivot on this for stacked bars."
+    description: "Invoice status: paid or unpaid only."
   }
 
   dimension: user_id {
@@ -380,7 +340,7 @@ view: trial_conversions {
 
   measure: trial_conversion_count {
     type: count
-    description: "Count of subscriptions by invoice status (pivot on Invoice Status for stacked bar)"
+    description: "Count of subscriptions by invoice status (paid or unpaid)"
     drill_fields: [drilldown_details*]
   }
 
@@ -388,27 +348,6 @@ view: trial_conversions {
     type: count
     filters: [invoice_status: "paid"]
     description: "Count of subscriptions that converted from trial to paid"
-    drill_fields: [drilldown_details*]
-  }
-
-  measure: open_trials {
-    type: count
-    filters: [invoice_status: "open"]
-    description: "Count of subscriptions with an open billable invoice post-trial"
-    drill_fields: [drilldown_details*]
-  }
-
-  measure: draft_trials {
-    type: count
-    filters: [invoice_status: "draft"]
-    description: "Count of subscriptions with a draft billable invoice post-trial"
-    drill_fields: [drilldown_details*]
-  }
-
-  measure: uncollectible_trials {
-    type: count
-    filters: [invoice_status: "uncollectible"]
-    description: "Count of subscriptions with an uncollectible billable invoice post-trial"
     drill_fields: [drilldown_details*]
   }
 
@@ -421,8 +360,8 @@ view: trial_conversions {
 
   measure: paid_converted_trials_last_28_days {
     type: count
-    filters: [invoice_status: "paid", event_date: "28 days"]
-    description: "Count of trial-to-paid conversions in the last 28 days"
+    filters: [invoice_status: "paid", trial_starts_at_date: "28 days"]
+    description: "Count of trial-to-paid conversions in the last 28 days, by trial start date"
     drill_fields: [drilldown_details*]
   }
 

@@ -35,6 +35,10 @@ explore: prod_trial_report {
   label: "Trial Report Prod"
   group_label: "Trial"
 }
+explore: prod_ai_echo_me {
+  label: "AI Echo Me Prod"
+  group_label: "AI Echo Me"
+}
 
 # Business Dash -> QA #
 

@@ -3,7 +3,7 @@ view: prod_active_paid_subscribers {
     sql:
       WITH date_spine AS (
         SELECT d AS report_date
-        FROM UNNEST(GENERATE_DATE_ARRAY('2025-01-01', CURRENT_DATE())) AS d
+        FROM UNNEST(GENERATE_DATE_ARRAY('2025-01-01', DATE_SUB(CURRENT_DATE(), INTERVAL 7 DAY))) AS d
       ),
 
       -- Get subscription start and end dates using reliable date fields

@@ -1,4 +1,4 @@
-view: qa_ai_echo_me {
+view: prod_ai_echo_me {
   filter: date_range {
     type: date
     description: "Filter by trial start date (initial_start_date). Use 'is in range' in the UI. Optional."

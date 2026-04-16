@@ -70,6 +70,14 @@ explore: daily_new_trials {
   label: "Cumulative New Trials"
   group_label: "Trial"
 }
+explore: qa_daily_subscriber_cancellations {
+  label: "Daily Subscriber Cancellations QA"
+  group_label: "Subscriptions"
+}
+explore: qa_ai_echo_me {
+  label: "AI Echo Me QA"
+  group_label: "AI Echo Me"
+}
 
 # Marketing Dash -> PROD #
 

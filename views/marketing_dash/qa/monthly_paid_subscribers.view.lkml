@@ -93,19 +93,19 @@ view: monthly_paid_subscribers {
       -- Target/Quota data for 2026
       targets AS (
       SELECT * FROM UNNEST([
-      STRUCT(2026 AS year, 1 AS month_number, 298 AS paid_subscribers_target),
-      STRUCT(2026 AS year, 2 AS month_number, 734 AS paid_subscribers_target),
-      STRUCT(2026 AS year, 3 AS month_number, 1262 AS paid_subscribers_target),
-      STRUCT(2026 AS year, 4 AS month_number, 1813 AS paid_subscribers_target),
-      STRUCT(2026 AS year, 5 AS month_number, 2532 AS paid_subscribers_target),
-      STRUCT(2026 AS year, 6 AS month_number, 3230 AS paid_subscribers_target),
-      STRUCT(2026 AS year, 7 AS month_number, 4055 AS paid_subscribers_target),
-      STRUCT(2026 AS year, 8 AS month_number, 4851 AS paid_subscribers_target),
-      STRUCT(2026 AS year, 9 AS month_number, 5619 AS paid_subscribers_target),
-      STRUCT(2026 AS year, 10 AS month_number, 6354 AS paid_subscribers_target),
-      STRUCT(2026 AS year, 11 AS month_number, 7057 AS paid_subscribers_target),
-      STRUCT(2026 AS year, 12 AS month_number, 7729 AS paid_subscribers_target)
-      ])
+  STRUCT(2026 AS year, 1 AS month_number, 298 AS paid_subscribers_target),
+  STRUCT(2026 AS year, 2 AS month_number, 734 AS paid_subscribers_target),
+  STRUCT(2026 AS year, 3 AS month_number, 1262 AS paid_subscribers_target),
+  STRUCT(2026 AS year, 4 AS month_number, 373 AS paid_subscribers_target),
+  STRUCT(2026 AS year, 5 AS month_number, 504 AS paid_subscribers_target),
+  STRUCT(2026 AS year, 6 AS month_number, 737 AS paid_subscribers_target),
+  STRUCT(2026 AS year, 7 AS month_number, 918 AS paid_subscribers_target),
+  STRUCT(2026 AS year, 8 AS month_number, 1077 AS paid_subscribers_target),
+  STRUCT(2026 AS year, 9 AS month_number, 1255 AS paid_subscribers_target),
+  STRUCT(2026 AS year, 10 AS month_number, 1440 AS paid_subscribers_target),
+  STRUCT(2026 AS year, 11 AS month_number, 1624 AS paid_subscribers_target),
+  STRUCT(2026 AS year, 12 AS month_number, 1803 AS paid_subscribers_target)
+])
       )
 
       SELECT

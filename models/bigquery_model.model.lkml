@@ -97,6 +97,10 @@ explore: prod_trial_subscription_summary {
   label: "Trial Subscription Summary Prod"
   group_label: "Subscriptions"
 }
+explore: prod_monthly_new_trials_started {
+  label: "Monthly New Trials Started Prod"
+  group_label: "Trial"
+}
 
 # Marketing Dash -> QA #
 
@@ -111,4 +115,8 @@ explore: cumulative_creator_signups {
 explore: monthly_paid_subscribers {
   label: "Monthly Paid Subscribers"
   group_label: "Subscriptions"
+}
+explore: qa_monthly_new_trials_started {
+  label: "Monthly New Trials Started QA"
+  group_label: "Trial"
 }

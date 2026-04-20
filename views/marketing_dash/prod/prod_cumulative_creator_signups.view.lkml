@@ -110,19 +110,19 @@ view: prod_cumulative_creator_signups {
       -- Target/Quota data for 2026
       targets AS (
       SELECT * FROM UNNEST([
-      STRUCT(2026 AS year, 1 AS month_number, 14000 AS cumulative_signups_target, 1254 AS monthly_signups_target, 213 AS monthly_paid_subscribers_target),
-      STRUCT(2026 AS year, 2 AS month_number, 16000 AS cumulative_signups_target, 2008 AS monthly_signups_target, 436 AS monthly_paid_subscribers_target),
-      STRUCT(2026 AS year, 3 AS month_number, 18000 AS cumulative_signups_target, 2008 AS monthly_signups_target, 528 AS monthly_paid_subscribers_target),
-      STRUCT(2026 AS year, 4 AS month_number, 21000 AS cumulative_signups_target, 2008 AS monthly_signups_target, 565 AS monthly_paid_subscribers_target),
-      STRUCT(2026 AS year, 5 AS month_number, 24000 AS cumulative_signups_target, 2504 AS monthly_signups_target, 749 AS monthly_paid_subscribers_target),
-      STRUCT(2026 AS year, 6 AS month_number, 27000 AS cumulative_signups_target, 2504 AS monthly_signups_target, 749 AS monthly_paid_subscribers_target),
-      STRUCT(2026 AS year, 7 AS month_number, 30333 AS cumulative_signups_target, 3002 AS monthly_signups_target, 896 AS monthly_paid_subscribers_target),
-      STRUCT(2026 AS year, 8 AS month_number, 33667 AS cumulative_signups_target, 3002 AS monthly_signups_target, 896 AS monthly_paid_subscribers_target),
-      STRUCT(2026 AS year, 9 AS month_number, 37000 AS cumulative_signups_target, 3002 AS monthly_signups_target, 896 AS monthly_paid_subscribers_target),
-      STRUCT(2026 AS year, 10 AS month_number, 39667 AS cumulative_signups_target, 3002 AS monthly_signups_target, 896 AS monthly_paid_subscribers_target),
-      STRUCT(2026 AS year, 11 AS month_number, 42333 AS cumulative_signups_target, 3002 AS monthly_signups_target, 896 AS monthly_paid_subscribers_target),
-      STRUCT(2026 AS year, 12 AS month_number, 45000 AS cumulative_signups_target, 3002 AS monthly_signups_target, 896 AS monthly_paid_subscribers_target)
-      ])
+  STRUCT(2026 AS year, 1 AS month_number, 14000 AS cumulative_signups_target, 1254 AS monthly_signups_target, 213 AS monthly_paid_subscribers_target),
+  STRUCT(2026 AS year, 2 AS month_number, 16000 AS cumulative_signups_target, 2008 AS monthly_signups_target, 436 AS monthly_paid_subscribers_target),
+  STRUCT(2026 AS year, 3 AS month_number, 18000 AS cumulative_signups_target, 2008 AS monthly_signups_target, 528 AS monthly_paid_subscribers_target),
+  STRUCT(2026 AS year, 4 AS month_number, 20979 AS cumulative_signups_target, 2979 AS monthly_signups_target, 112 AS monthly_paid_subscribers_target),
+  STRUCT(2026 AS year, 5 AS month_number, 24202 AS cumulative_signups_target, 3224 AS monthly_signups_target, 145 AS monthly_paid_subscribers_target),
+  STRUCT(2026 AS year, 6 AS month_number, 28852 AS cumulative_signups_target, 4650 AS monthly_signups_target, 251 AS monthly_paid_subscribers_target),
+  STRUCT(2026 AS year, 7 AS month_number, 32727 AS cumulative_signups_target, 3875 AS monthly_signups_target, 209 AS monthly_paid_subscribers_target),
+  STRUCT(2026 AS year, 8 AS month_number, 36313 AS cumulative_signups_target, 3586 AS monthly_signups_target, 194 AS monthly_paid_subscribers_target),
+  STRUCT(2026 AS year, 9 AS month_number, 39940 AS cumulative_signups_target, 3627 AS monthly_signups_target, 218 AS monthly_paid_subscribers_target),
+  STRUCT(2026 AS year, 10 AS month_number, 43781 AS cumulative_signups_target, 3840 AS monthly_signups_target, 230 AS monthly_paid_subscribers_target),
+  STRUCT(2026 AS year, 11 AS month_number, 47711 AS cumulative_signups_target, 3931 AS monthly_signups_target, 236 AS monthly_paid_subscribers_target),
+  STRUCT(2026 AS year, 12 AS month_number, 51642 AS cumulative_signups_target, 3931 AS monthly_signups_target, 236 AS monthly_paid_subscribers_target)
+])
       )
 
       SELECT

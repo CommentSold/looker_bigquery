@@ -69,35 +69,43 @@ view: prod_ai_echo_me {
 
       -- Most recent echo_me_agents record per user
       echo_me_latest AS (
-      SELECT
-      user_id,
-      id AS echo_me_id,
-      session_id,
-      agent,
-      created_at,
-      updated_at,
-      sea_status,
-      coda_status,
-      dma_status,
-      asa_status,
-      raca_status,
-      external_channel_id,
-      external_channel_name,
-      channel_type,
-      linked_meta_app,
-      linked_meta_app_id,
-      -- Derive an overall status: 'active' if any agent is enabled/connected
-      CASE
-      WHEN sea_status IN ('enabled', 'connected')
-      OR coda_status IN ('enabled', 'connected')
-      OR dma_status IN ('enabled', 'connected')
-      OR asa_status IN ('enabled', 'connected')
-      OR raca_status IN ('enabled', 'connected')
-      THEN 'active'
-      ELSE 'inactive'
-      END AS overall_agent_status
-      FROM `popshoplive-26f81.commentchat.echo_me_agents`
-      QUALIFY ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY created_at DESC) = 1
+        SELECT
+          user_id,
+
+          -- Per-agent latest status (independent of other agents)
+          ARRAY_AGG(sea_status IGNORE NULLS ORDER BY sea_status_last_changed DESC LIMIT 1)[SAFE_OFFSET(0)] AS sea_status,
+          ARRAY_AGG(coda_status IGNORE NULLS ORDER BY coda_status_last_changed DESC LIMIT 1)[SAFE_OFFSET(0)] AS coda_status,
+          ARRAY_AGG(dma_status IGNORE NULLS ORDER BY dma_status_last_changed DESC LIMIT 1)[SAFE_OFFSET(0)] AS dma_status,
+          ARRAY_AGG(asa_status IGNORE NULLS ORDER BY asa_status_last_changed DESC LIMIT 1)[SAFE_OFFSET(0)] AS asa_status,
+          ARRAY_AGG(raca_status IGNORE NULLS ORDER BY raca_status_last_changed DESC LIMIT 1)[SAFE_OFFSET(0)] AS raca_status,
+
+          -- Representative record fields — pick from the most recently updated row
+          ARRAY_AGG(STRUCT(
+            id AS echo_me_id,
+            session_id,
+            agent,
+            created_at,
+            updated_at,
+            external_channel_id,
+            external_channel_name,
+            channel_type,
+            linked_meta_app,
+            linked_meta_app_id
+          ) ORDER BY updated_at DESC LIMIT 1)[SAFE_OFFSET(0)].* ,
+
+          -- Overall status derived AFTER collapsing
+          CASE
+            WHEN ARRAY_AGG(sea_status  IGNORE NULLS ORDER BY sea_status_last_changed  DESC LIMIT 1)[SAFE_OFFSET(0)] IN ('enabled','connected')
+              OR ARRAY_AGG(coda_status IGNORE NULLS ORDER BY coda_status_last_changed DESC LIMIT 1)[SAFE_OFFSET(0)] IN ('enabled','connected')
+              OR ARRAY_AGG(dma_status  IGNORE NULLS ORDER BY dma_status_last_changed  DESC LIMIT 1)[SAFE_OFFSET(0)] IN ('enabled','connected')
+              OR ARRAY_AGG(asa_status  IGNORE NULLS ORDER BY asa_status_last_changed  DESC LIMIT 1)[SAFE_OFFSET(0)] IN ('enabled','connected')
+              OR ARRAY_AGG(raca_status IGNORE NULLS ORDER BY raca_status_last_changed DESC LIMIT 1)[SAFE_OFFSET(0)] IN ('enabled','connected')
+            THEN 'active'
+            ELSE 'inactive'
+          END AS overall_agent_status
+
+        FROM `popshoplive-26f81.commentchat.echo_me_agents`
+        GROUP BY user_id
       ),
 
       -- Trial users with Echo Me activity (INNER JOIN — only trial users appear, grouped by trial_start_date)

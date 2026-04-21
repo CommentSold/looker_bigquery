@@ -38,28 +38,15 @@ view: cumulative_creator_signups {
       ),
 
       first_saas_base AS (
-      SELECT
-      user_id,
-      MIN(current_period_start) AS first_subscription_date
-      FROM `popshoplive-26f81.dbt_popshop.fact_seller_subscription` t1,
-      UNNEST(t1.plans) AS plan
-      WHERE
-      JSON_EXTRACT_SCALAR(plan, '$.planType') = 'plan'
-      AND current_period_start IS NOT NULL
-      AND status = 'active'
-      AND (
-      trial_end IS NULL
-      OR DATETIME(current_period_start) >= DATETIME(
-      COALESCE(
-      CASE
-      WHEN cancellation_applied_at IS NOT NULL AND cancellation_applied_at < trial_end
-      THEN cancellation_applied_at
-      END,
-      trial_end
-      )
-      )
-      )
-      GROUP BY user_id
+        SELECT
+          user_id,
+          MIN(created_at) AS first_subscription_date  -- or `created`, depending on check
+        FROM `popshoplive-26f81.dbt_popshop.fact_seller_subscription_invoice`
+        WHERE is_deleted = FALSE
+          AND status = 'paid'
+          AND amount_due  > 0
+          AND amount_paid > 0
+        GROUP BY user_id
       ),
 
       first_saas AS (

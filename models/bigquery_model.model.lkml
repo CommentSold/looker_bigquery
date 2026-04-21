@@ -101,6 +101,10 @@ explore: prod_monthly_new_trials_started {
   label: "Monthly New Trials Started Prod"
   group_label: "Trial"
 }
+explore: prod_signup_conversion_funnel {
+  label: "Signup Conversion Funnel Prod"
+  group_label: "Signup"
+}
 
 # Marketing Dash -> QA #
 
@@ -119,4 +123,8 @@ explore: monthly_paid_subscribers {
 explore: qa_monthly_new_trials_started {
   label: "Monthly New Trials Started QA"
   group_label: "Trial"
+}
+explore: qa_signup_conversion_funnel {
+  label: "Signup Conversion Funnel QA"
+  group_label: "Signup"
 }

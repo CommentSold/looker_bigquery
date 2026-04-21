@@ -42,24 +42,28 @@ view: prod_monthly_paid_subscribers {
 
       -- Monthly invoices from actual invoice records
       monthly_invoices AS (
-      SELECT
-      EXTRACT(YEAR FROM inv.created) AS invoice_year,
-      EXTRACT(MONTH FROM inv.created) AS invoice_month,
-      inv.user_id,
-      'monthly' AS invoice_type
-      FROM `popshoplive-26f81.dbt_popshop.fact_seller_subscription_invoice` inv
-      INNER JOIN `popshoplive-26f81.dbt_popshop.fact_seller_subscription` t1
-      ON t1.subscription_id = inv.subscription_id,
-      UNNEST(t1.plans) AS plan
-      INNER JOIN `popshoplive-26f81.dbt_popshop.dim_profiles` p ON p.user_id = inv.user_id
-      LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_private_profiles` pprof ON pprof.user_id = inv.user_id
-      WHERE
-      JSON_EXTRACT_SCALAR(plan, '$.planType') = 'plan'
-      AND JSON_EXTRACT_SCALAR(plan, '$.interval') = 'month'
-      AND inv.status = 'paid'
-      AND p.apps_pop_store = TRUE
-      AND p.user_type IN ('seller', 'verifiedSeller')
-      AND (pprof.email IS NULL OR NOT REGEXP_CONTAINS(LOWER(pprof.email), r'@(test\.com|example\.com|popshoplive\.com|commentsold\.com)$'))
+        SELECT
+          EXTRACT(YEAR  FROM inv.created) AS invoice_year,
+          EXTRACT(MONTH FROM inv.created) AS invoice_month,
+          inv.user_id,
+          'monthly' AS invoice_type
+        FROM `popshoplive-26f81.dbt_popshop.fact_seller_subscription_invoice` inv
+        INNER JOIN `popshoplive-26f81.dbt_popshop.fact_seller_subscription` t1
+          ON t1.subscription_id = inv.subscription_id,
+        UNNEST(t1.plans) AS plan
+        INNER JOIN `popshoplive-26f81.dbt_popshop.dim_profiles` p ON p.user_id = inv.user_id
+        LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_private_profiles` pprof ON pprof.user_id = inv.user_id
+        WHERE JSON_EXTRACT_SCALAR(plan, '$.planType') = 'plan'
+          AND JSON_EXTRACT_SCALAR(plan, '$.interval') = 'month'
+          AND inv.status    = 'paid'
+          AND inv.amount_due  > 0    -- ← NEW
+          AND inv.amount_paid > 0    -- ← NEW
+          AND inv.is_deleted = FALSE -- ← NEW (consistency with other views)
+          AND p.apps_pop_store = TRUE
+          AND p.user_type IN ('seller', 'verifiedSeller')
+          AND (pprof.email IS NULL
+               OR NOT REGEXP_CONTAINS(LOWER(pprof.email),
+                    r'@(test\.com|example\.com|popshoplive\.com|commentsold\.com)$'))
       ),
 
       -- Combine monthly and yearly
@@ -112,9 +116,21 @@ view: prod_monthly_paid_subscribers {
       om.first_day_of_month,
       om.month_number,
       om.year,
-      ms.actual_paid_subscribers,
-      ms.monthly_plan_subscribers,
-      ms.yearly_plan_subscribers,
+      CASE
+        WHEN om.first_day_of_month <= DATE_TRUNC(CURRENT_DATE(), MONTH)
+          THEN ms.actual_paid_subscribers
+        ELSE NULL
+      END AS actual_paid_subscribers,
+      CASE
+        WHEN om.first_day_of_month <= DATE_TRUNC(CURRENT_DATE(), MONTH)
+          THEN ms.monthly_plan_subscribers
+        ELSE NULL
+      END AS monthly_plan_subscribers,
+      CASE
+        WHEN om.first_day_of_month <= DATE_TRUNC(CURRENT_DATE(), MONTH)
+          THEN ms.yearly_plan_subscribers
+        ELSE NULL
+      END AS yearly_plan_subscribers,
       t.paid_subscribers_target
       FROM output_months om
       LEFT JOIN monthly_summary ms

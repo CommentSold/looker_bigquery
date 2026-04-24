@@ -28,6 +28,49 @@ view: prod_trial_report {
       AND {% condition date_range %} TIMESTAMP(t1.initial_start_date) {% endcondition %}
       ),
 
+      -- ✅ Mirror qa_onboarding_funnel: filter to onboarding_complete events so we pick up
+      -- the row that actually carries marketing_campaign / utm_regintent / business_type.
+      onboarding_events AS (
+      SELECT
+      context_campaign_campaign AS marketing_campaign,
+      utm_regintent,
+      business_type,
+      `timestamp`,
+      user_id,
+      scene,
+      step_name,
+      onboarding_session_id
+      FROM `popshoplive-26f81.popstore.popstore_onboarding_screen_action`
+      WHERE (scene = 'onboarding' OR scene IS NULL)
+      AND (step_name = 'onboarding_complete' OR step_name IS NULL)
+      ),
+
+      -- ✅ Deduplicate to the most relevant onboarding event per user.
+      -- Prefer rows where the marketing/intent/business_type fields are actually populated,
+      -- and among those pick the most recent by timestamp. This prevents picking an
+      -- arbitrary 'generic' row.
+      onboarding_events_dedup AS (
+      SELECT
+      user_id,
+      marketing_campaign,
+      utm_regintent,
+      business_type,
+      `timestamp`,
+      onboarding_session_id
+      FROM onboarding_events
+      QUALIFY ROW_NUMBER() OVER (
+      PARTITION BY user_id
+      ORDER BY
+      CASE
+      WHEN marketing_campaign IS NOT NULL
+      OR (utm_regintent IS NOT NULL AND utm_regintent != 'generic')
+      OR (business_type IS NOT NULL AND business_type != 'generic')
+      THEN 0 ELSE 1
+      END,
+      `timestamp` DESC
+      ) = 1
+      ),
+
       marketing_capture AS (
       SELECT
       user_id,
@@ -52,8 +95,8 @@ view: prod_trial_report {
       prof.url_code AS sign_up_url_code,
       prof.username AS sign_up_user_username,
       pprof.email AS sign_up_user_email,
-      oe.context_campaign_campaign AS marketing_campaign,
-      oe.utm_regintent,
+      COALESCE(oe.marketing_campaign, mc.utm_campaign) AS marketing_campaign,
+      COALESCE(oe.utm_regintent, mc.utm_regintent) AS utm_regintent,
       oe.business_type,
 
       CASE
@@ -83,7 +126,7 @@ view: prod_trial_report {
       mc.utm_regintent AS marketing_utm_regintent,
 
       CASE
-      WHEN COALESCE(oe.context_campaign_campaign, mc.utm_campaign) IS NOT NULL
+      WHEN COALESCE(oe.marketing_campaign, mc.utm_campaign) IS NOT NULL
       THEN 'marketing_campaign'
       WHEN mc.utm_source IS NOT NULL
       THEN 'marketing_campaign'
@@ -170,15 +213,8 @@ view: prod_trial_report {
       LEFT JOIN marketing_capture mc
       ON mc.user_id = base.user_id
 
-      LEFT JOIN (
-      SELECT *
-      FROM (
-      SELECT *,
-      ROW_NUMBER() OVER (PARTITION BY user_id) rn
-      FROM `popshoplive-26f81.popstore.popstore_onboarding_screen_action`
-      )
-      WHERE rn = 1
-      ) oe
+      -- ✅ Join to the filtered + properly-prioritized onboarding event
+      LEFT JOIN onboarding_events_dedup oe
       ON oe.user_id = base.user_id
 
       WHERE

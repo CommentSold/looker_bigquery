@@ -62,7 +62,11 @@ view: prod_ai_echo_me {
       OR dma_status IN ('enabled', 'connected')
       OR asa_status IN ('enabled', 'connected')
       OR raca_status IN ('enabled', 'connected')
-      ) AS total_with_any_agent_active
+      ) AS total_with_any_agent_active,
+      CASE
+        WHEN COUNTIF(ai_echo_setup_complete = TRUE) > 0 THEN 'Yes'
+        ELSE 'No'
+      END AS onboarding_complete
       FROM `popshoplive-26f81.commentchat.echo_me_agents`
       GROUP BY user_id
       ),
@@ -137,6 +141,7 @@ view: prod_ai_echo_me {
       stats.total_asa_active,
       stats.total_raca_active,
       stats.total_with_any_agent_active,
+      stats.onboarding_complete,
 
       -- subscription / trial fields
       base.id,
@@ -490,6 +495,13 @@ view: prod_ai_echo_me {
     sql: ${TABLE}.acquisition_source ;;
   }
 
+  dimension: onboarding_complete {
+    type: string
+    sql: ${TABLE}.onboarding_complete ;;
+    label: "Onboarding Complete"
+    description: "Yes if the user has at least one echo_me_agents row with ai_echo_setup_complete set. No otherwise."
+  }
+
   # ——— Measures ———
 
   measure: total_echo_me_setups {
@@ -568,6 +580,15 @@ view: prod_ai_echo_me {
     drill_fields: [drill_details*]
   }
 
+  measure: count_setup_complete {
+    type: count_distinct
+    sql: ${TABLE}.user_id ;;
+    filters: [onboarding_complete: "Yes"]
+    label: "AI Echo Setup Complete Users"
+    description: "Count of users who have completed AI Echo setup"
+    drill_fields: [drill_details*]
+  }
+
   # ——— Drill Set ———
 
   set: drill_details {
@@ -577,6 +598,7 @@ view: prod_ai_echo_me {
       sign_up_user_email,
       sign_up_user_url,
       is_subscriber,
+      onboarding_complete,
       session_id,
       echo_me_created_date,
       overall_agent_status,

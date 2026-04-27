@@ -117,11 +117,12 @@ view: qa_ai_echo_me {
       em.agent,
       em.created_at AS echo_me_created_at,
       em.updated_at AS echo_me_updated_at,
-      em.sea_status,
-      em.coda_status,
-      em.dma_status,
-      em.asa_status,
-      em.raca_status,
+      CASE WHEN em.sea_status  = 'disabled' THEN 'paused' ELSE em.sea_status  END AS sea_status,
+      CASE WHEN em.coda_status = 'disabled' THEN 'paused' ELSE em.coda_status END AS coda_status,
+      CASE WHEN em.dma_status  = 'disabled' THEN 'paused' ELSE em.dma_status  END AS dma_status,
+      CASE WHEN em.asa_status  = 'disabled' THEN 'paused' ELSE em.asa_status  END AS asa_status,
+      CASE WHEN em.raca_status = 'disabled' THEN 'paused' ELSE em.raca_status END AS raca_status,
+
       em.overall_agent_status,
       em.external_channel_id,
       em.external_channel_name,
@@ -299,35 +300,35 @@ view: qa_ai_echo_me {
     type: string
     sql: ${TABLE}.sea_status ;;
     label: "Social Engagement Agent Status"
-    description: "Values: null, enabled, disabled, preview, connected"
+    description: "Values: null, enabled, paused, preview, connected"
   }
 
   dimension: coda_status {
     type: string
     sql: ${TABLE}.coda_status ;;
     label: "Comment to DM Agent Status"
-    description: "Values: null, enabled, disabled, preview, connected"
+    description: "Values: null, enabled, paused, preview, connected"
   }
 
   dimension: dma_status {
     type: string
     sql: ${TABLE}.dma_status ;;
     label: "Deal Monitoring Agent Status"
-    description: "Values: null, enabled, disabled, preview, connected"
+    description: "Values: null, enabled, paused, preview, connected"
   }
 
   dimension: asa_status {
     type: string
     sql: ${TABLE}.asa_status ;;
     label: "Auto Selling Agent Status"
-    description: "Values: null, enabled, disabled, preview, connected"
+    description: "Values: null, enabled, paused, preview, connected"
   }
 
   dimension: raca_status {
     type: string
     sql: ${TABLE}.raca_status ;;
     label: "Real Estate Concierge Agent Status"
-    description: "Values: null, enabled, disabled, preview, connected"
+    description: "Values: null, enabled, paused, preview, connected"
   }
 
   # ——— Echo Me Stats Dimensions ———

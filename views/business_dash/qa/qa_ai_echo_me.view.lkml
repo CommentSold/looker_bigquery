@@ -140,8 +140,8 @@ view: qa_ai_echo_me {
       stats.total_dma_active,
       stats.total_asa_active,
       stats.total_raca_active,
-      stats.total_with_any_agent_active,
       stats.onboarding_complete,
+      stats.total_with_any_agent_active,
 
       -- subscription / trial fields
       base.id,

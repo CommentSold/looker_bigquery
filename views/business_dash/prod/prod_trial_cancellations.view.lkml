@@ -94,7 +94,7 @@ view: prod_trial_cancellations {
       AND LOWER(pprof.email) NOT LIKE '%@commentsold.com'
       ))
       {% if date_range._is_filtered %}
-      AND {% condition date_range %} TIMESTAMP(DATE(COALESCE(fs.cancelled_at, fs.updated_at))) {% endcondition %}
+      AND {% condition date_range %} TIMESTAMP(fs.initial_start_date) {% endcondition %}
       {% endif %}
       ;;
   }

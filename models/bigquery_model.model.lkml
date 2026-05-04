@@ -82,6 +82,10 @@ explore: qa_ai_echo_me {
   label: "AI Echo Me QA"
   group_label: "AI Echo Me"
 }
+explore: qa_acquisition_funnel_summary {
+  label: "Acquisition Funnel Summary"
+  group_label: "Onboarding"
+}
 
 # Marketing Dash -> PROD #
 

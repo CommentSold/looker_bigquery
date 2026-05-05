@@ -151,12 +151,20 @@ view: qa_agent_trial_report {
       ON ema.user_id = base.user_id
 
       WHERE
-      (pprof.email IS NULL OR (
-      LOWER(pprof.email) NOT LIKE '%@test.com'
-      AND LOWER(pprof.email) NOT LIKE '%@example.com'
-      AND LOWER(pprof.email) NOT LIKE '%@popshoplive.com'
-      AND LOWER(pprof.email) NOT LIKE '%@commentsold.com'
-      ))
+        -- Restrict to agent-related regintents only
+        COALESCE(oe.utm_regintent, mc.utm_regintent) IN (
+          'brand_deals_agent',
+          'auto_selling_agent',
+          'engagement_agent',
+          'comment_to_dm_agent',
+          'ai_team'
+        )
+        AND (pprof.email IS NULL OR (
+          LOWER(pprof.email) NOT LIKE '%@test.com'
+          AND LOWER(pprof.email) NOT LIKE '%@example.com'
+          AND LOWER(pprof.email) NOT LIKE '%@popshoplive.com'
+          AND LOWER(pprof.email) NOT LIKE '%@commentsold.com'
+        ))
       ORDER BY base.initial_start_date DESC
       ;;
   }

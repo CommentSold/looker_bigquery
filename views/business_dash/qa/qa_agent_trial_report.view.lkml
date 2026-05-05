@@ -91,6 +91,11 @@ view: qa_agent_trial_report {
       prof.username AS sign_up_user_username,
       pprof.email AS sign_up_user_email,
 
+      -- ✅ Profile JSON fields (from dim_private_profiles.private_profile)
+      JSON_VALUE(pprof.private_profile, '$.email') AS profile_email,
+      JSON_VALUE(pprof.private_profile, '$.sellerShippingAddress.firstName') AS first_name,
+      JSON_VALUE(pprof.private_profile, '$.sellerShippingAddress.lastName')  AS last_name,
+
       -- Effective utm_regintent (with fallback) — used both for filtering and display
       COALESCE(oe.utm_regintent, mc.utm_regintent) AS utm_regintent,
       COALESCE(oe.marketing_campaign, mc.utm_campaign) AS marketing_campaign,
@@ -202,11 +207,41 @@ view: qa_agent_trial_report {
   dimension: sign_up_user_email {
     type: string
     sql: ${TABLE}.sign_up_user_email ;;
+    description: "Email from dim_private_profiles.email column"
   }
 
   dimension: sign_up_user_url {
     type: string
     sql: 'https://pop.store/' || ${TABLE}.sign_up_url_code ;;
+  }
+
+  # ✅ New profile JSON dimensions
+  dimension: profile_email {
+    type: string
+    sql: ${TABLE}.profile_email ;;
+    label: "Profile Email (JSON)"
+    description: "Email pulled from private_profile JSON ($.email). May differ from sign_up_user_email."
+  }
+
+  dimension: first_name {
+    type: string
+    sql: ${TABLE}.first_name ;;
+    label: "First Name"
+    description: "From private_profile.sellerShippingAddress.firstName. NULL if user has not set a shipping address."
+  }
+
+  dimension: last_name {
+    type: string
+    sql: ${TABLE}.last_name ;;
+    label: "Last Name"
+    description: "From private_profile.sellerShippingAddress.lastName. NULL if user has not set a shipping address."
+  }
+
+  dimension: full_name {
+    type: string
+    sql: TRIM(CONCAT(COALESCE(${TABLE}.first_name, ''), ' ', COALESCE(${TABLE}.last_name, ''))) ;;
+    label: "Full Name"
+    description: "Concatenated first_name + last_name from shipping address. Empty when neither is set."
   }
 
   # ——— Trial / Subscription dimensions ———
@@ -361,6 +396,9 @@ view: qa_agent_trial_report {
   set: agent_drill_details {
     fields: [
       user_id,
+      first_name,
+      last_name,
+      profile_email,
       sign_up_user_username,
       sign_up_user_email,
       sign_up_user_url,

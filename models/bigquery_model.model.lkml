@@ -70,6 +70,10 @@ explore: qa_trial_report {
   label: "Trial Report QA"
   group_label: "Trial"
 }
+explore: qa_agent_trial_report {
+  label: "Agent Trial Report"
+  group_label: "Trial"
+}
 explore: daily_new_trials {
   label: "Cumulative New Trials"
   group_label: "Trial"

@@ -72,15 +72,13 @@ view: prod_agent_trial_report {
       -- Most recent echo_me_agents row per user — surfaces is_meta_setup_valid
       echo_me_latest AS (
       SELECT
-      user_id,
-      is_meta_setup_valid,
-      created_at AS meta_setup_last_seen_at
+        id,
+        user_id,
+        is_meta_setup_valid,
+        created_at AS meta_setup_last_seen_at
       FROM `popshoplive-26f81.commentchat.echo_me_agents`
-      WHERE is_meta_setup_valid IS NOT NULL
-      QUALIFY ROW_NUMBER() OVER (
-      PARTITION BY user_id
-      ORDER BY created_at DESC
-      ) = 1
+      WHERE id LIKE '%meta_setup_%'
+      QUALIFY ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY created_at DESC) = 1
       )
 
       SELECT
@@ -126,7 +124,7 @@ view: prod_agent_trial_report {
       -- Meta setup flag display: 'Valid' / 'Invalid' / 'Not Set Up'
       CASE
       WHEN ema.user_id IS NULL THEN 'Not Set Up'
-      WHEN ema.is_meta_setup_valid = TRUE THEN 'Valid'
+      WHEN ema.is_meta_setup_valid = TRUE THEN 'Has Valid Meta Connection'
       ELSE 'Invalid'
       END AS meta_setup_status,
 

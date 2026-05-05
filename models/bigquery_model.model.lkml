@@ -31,6 +31,10 @@ explore: prod_trial_conversions {
   label: "Trial Conversions Prod"
   group_label: "Trial"
 }
+explore: prod_agent_trial_conversions {
+  label: "Agent Trial Conversions Prod"
+  group_label: "Trial"
+}
 explore: prod_trial_report {
   label: "Trial Report Prod"
   group_label: "Trial"
@@ -68,6 +72,10 @@ explore: qa_trial_conversion_rate {
 }
 explore: qa_trial_conversions {
   label: "Trial Conversions QA"
+  group_label: "Trial"
+}
+explore: qa_agent_trial_conversions {
+  label: "Agent Trial Conversions QA"
   group_label: "Trial"
 }
 explore: qa_trial_report {

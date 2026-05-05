@@ -35,6 +35,10 @@ explore: prod_trial_report {
   label: "Trial Report Prod"
   group_label: "Trial"
 }
+explore: prod_agent_trial_report {
+  label: "Agent Trial Report Prod"
+  group_label: "Trial"
+}
 explore: prod_ai_echo_me {
   label: "AI Echo Me Prod"
   group_label: "AI Echo Me"
@@ -71,7 +75,7 @@ explore: qa_trial_report {
   group_label: "Trial"
 }
 explore: qa_agent_trial_report {
-  label: "Agent Trial Report"
+  label: "Agent Trial Report QA"
   group_label: "Trial"
 }
 explore: daily_new_trials {

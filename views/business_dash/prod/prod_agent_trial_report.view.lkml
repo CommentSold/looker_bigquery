@@ -1,4 +1,4 @@
-view: qa_agent_trial_report {
+view: prod_agent_trial_report {
   filter: date_range {
     type: date
     description: "Filter trials by start date. Use 'is in range' in the UI. Optional."

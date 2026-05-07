@@ -148,6 +148,8 @@ view: prod_trial_conversions {
       oe.context_campaign_campaign AS marketing_campaign,
       oe.utm_regintent,
       oe.business_type,
+      oe.context_campaign_onboarding_path AS onboarding_path,
+      oe.context_campaign_planlevel AS plan_level,
 
       COALESCE(fs.discounted_price, fs.price + fs.tax_amount) AS price,
       JSON_EXTRACT_SCALAR(plan, '$.productName') AS plan_name,
@@ -322,6 +324,16 @@ view: prod_trial_conversions {
     sql: ${TABLE}.business_type ;;
   }
 
+  dimension: onboarding_path {
+    type: string
+    sql: ${TABLE}.onboarding_path ;;
+  }
+
+  dimension: plan_level {
+    type: string
+    sql: ${TABLE}.plan_level ;;
+  }
+
   dimension: acquisition_source {
     type: string
     sql: ${TABLE}.acquisition_source ;;
@@ -422,7 +434,9 @@ view: prod_trial_conversions {
       marketing_campaign,
       acquisition_source,
       utm_regintent,
-      business_type
+      business_type,
+      onboarding_path,
+      plan_level
     ]
   }
 }

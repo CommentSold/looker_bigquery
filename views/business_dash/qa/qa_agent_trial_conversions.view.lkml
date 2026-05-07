@@ -126,6 +126,8 @@ view: qa_agent_trial_conversions {
       onboarding_events AS (
       SELECT
       context_campaign_campaign AS marketing_campaign,
+      context_campaign_onboarding_path AS onboarding_path,
+      context_campaign_planlevel AS plan_level,
       utm_regintent,
       business_type,
       `timestamp`,
@@ -141,6 +143,8 @@ view: qa_agent_trial_conversions {
       marketing_campaign,
       utm_regintent,
       business_type,
+      onboarding_path,
+      plan_level,
       `timestamp`
       FROM onboarding_events
       QUALIFY ROW_NUMBER() OVER (
@@ -195,6 +199,8 @@ view: qa_agent_trial_conversions {
       COALESCE(oe.utm_regintent, mc.utm_regintent)        AS utm_regintent,
       COALESCE(oe.marketing_campaign, mc.utm_campaign)    AS marketing_campaign,
       oe.business_type,
+      oe.onboarding_path,
+      oe.plan_level,
 
       CASE
       WHEN COALESCE(oe.marketing_campaign, mc.utm_campaign) IS NOT NULL THEN 'marketing_campaign'
@@ -438,6 +444,16 @@ view: qa_agent_trial_conversions {
     sql: ${TABLE}.business_type ;;
   }
 
+  dimension: onboarding_path {
+    type: string
+    sql: ${TABLE}.onboarding_path ;;
+  }
+
+  dimension: plan_level {
+    type: string
+    sql: ${TABLE}.plan_level ;;
+  }
+
   dimension: acquisition_source {
     type: string
     sql: ${TABLE}.acquisition_source ;;
@@ -548,6 +564,8 @@ view: qa_agent_trial_conversions {
       utm_regintent,
       marketing_campaign,
       business_type,
+      onboarding_path,
+      plan_level,
       acquisition_source,
       meta_setup_status,
       is_meta_setup_valid,

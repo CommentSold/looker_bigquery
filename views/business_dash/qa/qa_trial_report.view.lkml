@@ -33,6 +33,8 @@ view: qa_trial_report {
       onboarding_events AS (
       SELECT
       context_campaign_campaign AS marketing_campaign,
+      context_campaign_onboarding_path AS onboarding_path,
+      context_campaign_planlevel AS plan_level,
       utm_regintent,
       business_type,
       `timestamp`,
@@ -53,6 +55,8 @@ view: qa_trial_report {
       SELECT
       user_id,
       marketing_campaign,
+      onboarding_path,
+      plan_level,
       utm_regintent,
       business_type,
       `timestamp`,
@@ -102,6 +106,8 @@ view: qa_trial_report {
       COALESCE(oe.marketing_campaign, mc.utm_campaign) AS marketing_campaign,
       COALESCE(oe.utm_regintent, mc.utm_regintent) AS utm_regintent,
       oe.business_type,
+      oe.onboarding_path,
+      oe.plan_level,
 
       CASE
       WHEN DATETIME(base.effective_trial_end) <= CURRENT_DATETIME()
@@ -352,6 +358,16 @@ view: qa_trial_report {
     sql: ${TABLE}.business_type ;;
   }
 
+  dimension: onboarding_path {
+    type: string
+    sql: ${TABLE}.onboarding_path ;;
+  }
+
+  dimension: plan_level {
+    type: string
+    sql: ${TABLE}.plan_level ;;
+  }
+
   dimension: acquisition_source {
     type: string
     sql: ${TABLE}.acquisition_source ;;
@@ -512,6 +528,8 @@ view: qa_trial_report {
       acquisition_source,
       utm_regintent,
       business_type,
+      onboarding_path,
+      plan_level,
       ai_pdf_session_id,
       ai_pdf_created_at,
       ai_pdf_status

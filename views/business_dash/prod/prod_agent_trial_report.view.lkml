@@ -30,6 +30,8 @@ view: prod_agent_trial_report {
       onboarding_events AS (
       SELECT
       context_campaign_campaign AS marketing_campaign,
+      context_campaign_onboarding_path AS onboarding_path,
+      context_campaign_planlevel AS plan_level,
       utm_regintent,
       business_type,
       `timestamp`,
@@ -43,6 +45,8 @@ view: prod_agent_trial_report {
       SELECT
       user_id,
       marketing_campaign,
+      onboarding_path,
+      plan_level,
       utm_regintent,
       business_type,
       `timestamp`
@@ -100,6 +104,8 @@ view: prod_agent_trial_report {
       COALESCE(oe.utm_regintent, mc.utm_regintent) AS utm_regintent,
       COALESCE(oe.marketing_campaign, mc.utm_campaign) AS marketing_campaign,
       oe.business_type,
+      oe.onboarding_path,
+      oe.plan_level,
 
       CASE
       WHEN COALESCE(oe.marketing_campaign, mc.utm_campaign) IS NOT NULL THEN 'marketing_campaign'
@@ -314,6 +320,16 @@ view: prod_agent_trial_report {
     sql: ${TABLE}.business_type ;;
   }
 
+  dimension: onboarding_path {
+    type: string
+    sql: ${TABLE}.onboarding_path ;;
+  }
+
+  dimension: plan_level {
+    type: string
+    sql: ${TABLE}.plan_level ;;
+  }
+
   dimension: acquisition_source {
     type: string
     sql: ${TABLE}.acquisition_source ;;
@@ -414,6 +430,8 @@ view: prod_agent_trial_report {
       utm_regintent,
       marketing_campaign,
       business_type,
+      onboarding_path,
+      plan_level,
       acquisition_source,
       meta_setup_status,
       is_meta_setup_valid,

@@ -32,10 +32,21 @@ view: prod_agent_trial_report {
       context_campaign_campaign AS marketing_campaign,
       context_campaign_onboarding_path AS onboarding_path,
       context_campaign_planlevel AS plan_level,
+      context_user_agent AS user_agent,
       utm_regintent,
       business_type,
       `timestamp`,
-      user_id
+      user_id,
+      CASE
+        WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(bot|crawler|spider|crawl|slurp|googlebot|bingpreview|facebookexternalhit|twitterbot|linkedinbot|discordbot|telegrambot|google-read-aloud)') THEN 'BOT'
+        WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(wv|webview|meta-iab|metaiab|facebook|fban|fbav|instagram|iabmv/1|whatsapp|line|linkedinapp|snapchat|gsa/|googleapp/|youtube|tiktok|reddit)') THEN 'WEBVIEW'
+        WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(iphone|ipad|ipod|cpu iphone os|cpu os)') THEN 'IOS'
+        WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'android') THEN 'ANDROID'
+        WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(windows nt|win64|wow64)') THEN 'WINDOWS_DESKTOP'
+        WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(macintosh|mac os x)') AND NOT REGEXP_CONTAINS(LOWER(context_user_agent), r'(iphone|ipad)') THEN 'MACOS_DESKTOP'
+        WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(linux|x11)') AND NOT REGEXP_CONTAINS(LOWER(context_user_agent), r'android') THEN 'LINUX_DESKTOP'
+        ELSE 'OTHER'
+      END AS device_category
       FROM `popshoplive-26f81.popstore.popstore_onboarding_screen_action`
       WHERE (scene = 'onboarding' OR scene IS NULL)
       AND (step_name = 'onboarding_complete' OR step_name IS NULL)
@@ -49,7 +60,9 @@ view: prod_agent_trial_report {
       plan_level,
       utm_regintent,
       business_type,
-      `timestamp`
+      `timestamp`,
+      device_category,
+      user_agent
       FROM onboarding_events
       QUALIFY ROW_NUMBER() OVER (
       PARTITION BY user_id
@@ -106,6 +119,8 @@ view: prod_agent_trial_report {
       oe.business_type,
       oe.onboarding_path,
       oe.plan_level,
+      oe.device_category,
+      oe.user_agent,
 
       CASE
       WHEN COALESCE(oe.marketing_campaign, mc.utm_campaign) IS NOT NULL THEN 'marketing_campaign'
@@ -330,6 +345,16 @@ view: prod_agent_trial_report {
     sql: ${TABLE}.plan_level ;;
   }
 
+  dimension: device_category {
+    type: string
+    sql: ${TABLE}.device_category ;;
+  }
+
+  dimension: user_agent {
+    type: string
+    sql: ${TABLE}.user_agent ;;
+  }
+
   dimension: acquisition_source {
     type: string
     sql: ${TABLE}.acquisition_source ;;
@@ -412,6 +437,8 @@ view: prod_agent_trial_report {
   set: agent_drill_details {
     fields: [
       user_id,
+      device_category,
+      user_agent,
       first_name,
       last_name,
       profile_email,

@@ -156,6 +156,17 @@ view: prod_ai_echo_me {
       COALESCE(base.discounted_price, base.price + base.tax_amount) AS price,
       base.plan_name,
       base.plan_interval,
+      oe.context_user_agent AS user_agent,
+      CASE
+        WHEN REGEXP_CONTAINS(LOWER(oe.context_user_agent), r'(bot|crawler|spider|crawl|slurp|googlebot|bingpreview|facebookexternalhit|twitterbot|linkedinbot|discordbot|telegrambot|google-read-aloud)') THEN 'BOT'
+        WHEN REGEXP_CONTAINS(LOWER(oe.context_user_agent), r'(wv|webview|meta-iab|metaiab|facebook|fban|fbav|instagram|iabmv/1|whatsapp|line|linkedinapp|snapchat|gsa/|googleapp/|youtube|tiktok|reddit)') THEN 'WEBVIEW'
+        WHEN REGEXP_CONTAINS(LOWER(oe.context_user_agent), r'(iphone|ipad|ipod|cpu iphone os|cpu os)') THEN 'IOS'
+        WHEN REGEXP_CONTAINS(LOWER(oe.context_user_agent), r'android') THEN 'ANDROID'
+        WHEN REGEXP_CONTAINS(LOWER(oe.context_user_agent), r'(windows nt|win64|wow64)') THEN 'WINDOWS_DESKTOP'
+        WHEN REGEXP_CONTAINS(LOWER(oe.context_user_agent), r'(macintosh|mac os x)') AND NOT REGEXP_CONTAINS(LOWER(oe.context_user_agent), r'(iphone|ipad)') THEN 'MACOS_DESKTOP'
+        WHEN REGEXP_CONTAINS(LOWER(oe.context_user_agent), r'(linux|x11)') AND NOT REGEXP_CONTAINS(LOWER(oe.context_user_agent), r'android') THEN 'LINUX_DESKTOP'
+        ELSE 'OTHER'
+      END AS device_category,
 
       CASE
       WHEN base.trial_end IS NULL THEN 'No trial'
@@ -458,6 +469,16 @@ view: prod_ai_echo_me {
     label: "Interval"
   }
 
+  dimension: device_category {
+    type: string
+    sql: ${TABLE}.device_category ;;
+  }
+
+  dimension: user_agent {
+    type: string
+    sql: ${TABLE}.user_agent ;;
+  }
+
   # ——— Profile / Acquisition Dimensions ———
 
   dimension: sign_up_user_url {
@@ -628,6 +649,8 @@ view: prod_ai_echo_me {
   set: drill_details {
     fields: [
       user_id,
+      device_category,
+      user_agent,
       first_name,
       last_name,
       profile_email,

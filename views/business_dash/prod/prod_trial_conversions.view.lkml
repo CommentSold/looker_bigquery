@@ -161,6 +161,7 @@ view: prod_trial_conversions {
         WHEN REGEXP_CONTAINS(LOWER(oe.context_user_agent), r'(linux|x11)') AND NOT REGEXP_CONTAINS(LOWER(oe.context_user_agent), r'android') THEN 'LINUX_DESKTOP'
         ELSE 'OTHER'
       END AS device_category,
+      oe.`timestamp` AS user_agent_time,
 
       COALESCE(fs.discounted_price, fs.price + fs.tax_amount) AS price,
       JSON_EXTRACT_SCALAR(plan, '$.productName') AS plan_name,
@@ -254,6 +255,14 @@ view: prod_trial_conversions {
     primary_key: yes
     hidden: yes
     sql: CONCAT(${TABLE}.subscription_id, '-', ${TABLE}.invoice_status) ;;
+  }
+
+  dimension_group: user_agent_time {
+    type: time
+    timeframes: [raw, time, date, week, month, quarter, year]
+    datatype: timestamp
+    sql: ${TABLE}.user_agent_time ;;
+    description: "Timestamp of the user agent"
   }
 
   dimension_group: event {
@@ -437,8 +446,6 @@ view: prod_trial_conversions {
   set: drilldown_details {
     fields: [
       user_id,
-      device_category,
-      user_agent,
       first_name,
       last_name,
       profile_email,
@@ -459,7 +466,10 @@ view: prod_trial_conversions {
       utm_regintent,
       business_type,
       onboarding_path,
-      plan_level
+      plan_level,
+      device_category,
+      user_agent,
+      user_agent_time_time
     ]
   }
 }

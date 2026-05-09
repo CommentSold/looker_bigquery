@@ -121,6 +121,7 @@ view: prod_agent_trial_report {
       oe.plan_level,
       oe.device_category,
       oe.user_agent,
+      oe.`timestamp` AS user_agent_time,
 
       CASE
       WHEN COALESCE(oe.marketing_campaign, mc.utm_campaign) IS NOT NULL THEN 'marketing_campaign'
@@ -295,6 +296,14 @@ view: prod_agent_trial_report {
     value_format_name: decimal_2
   }
 
+  dimension_group: user_agent_time {
+    type: time
+    timeframes: [raw, time, date, week, month, quarter, year]
+    datatype: timestamp
+    sql: ${TABLE}.user_agent_time ;;
+    description: "Timestamp of the user agent"
+  }
+
   dimension_group: trial_starts_at {
     type: time
     convert_tz: no
@@ -437,8 +446,6 @@ view: prod_agent_trial_report {
   set: agent_drill_details {
     fields: [
       user_id,
-      device_category,
-      user_agent,
       first_name,
       last_name,
       profile_email,
@@ -462,7 +469,10 @@ view: prod_agent_trial_report {
       acquisition_source,
       meta_setup_status,
       is_meta_setup_valid,
-      meta_setup_last_seen_at_date
+      meta_setup_last_seen_at_date,
+      device_category,
+      user_agent,
+      user_agent_time_time
     ]
   }
 }

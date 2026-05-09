@@ -167,6 +167,7 @@ view: prod_ai_echo_me {
         WHEN REGEXP_CONTAINS(LOWER(oe.context_user_agent), r'(linux|x11)') AND NOT REGEXP_CONTAINS(LOWER(oe.context_user_agent), r'android') THEN 'LINUX_DESKTOP'
         ELSE 'OTHER'
       END AS device_category,
+      oe.`timestamp` AS user_agent_time,
 
       CASE
       WHEN base.trial_end IS NULL THEN 'No trial'
@@ -282,6 +283,14 @@ view: prod_ai_echo_me {
   }
 
   # ——— Echo Me Dimensions ———
+
+  dimension_group: user_agent_time {
+    type: time
+    timeframes: [raw, time, date, week, month, quarter, year]
+    datatype: timestamp
+    sql: ${TABLE}.user_agent_time ;;
+    description: "Timestamp of the user agent"
+  }
 
   dimension_group: echo_me_created {
     type: time
@@ -649,8 +658,6 @@ view: prod_ai_echo_me {
   set: drill_details {
     fields: [
       user_id,
-      device_category,
-      user_agent,
       first_name,
       last_name,
       profile_email,
@@ -685,7 +692,10 @@ view: prod_ai_echo_me {
       marketing_campaign,
       utm_regintent,
       business_type,
-      acquisition_source
+      acquisition_source,
+      device_category,
+      user_agent,
+      user_agent_time_time
     ]
   }
 }

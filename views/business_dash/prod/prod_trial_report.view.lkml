@@ -123,6 +123,7 @@ view: prod_trial_report {
       oe.plan_level,
       oe.device_category,
       oe.user_agent,
+      oe.`timestamp` AS user_agent_time,
 
       CASE
       WHEN DATETIME(base.effective_trial_end) <= CURRENT_DATETIME()
@@ -258,6 +259,14 @@ view: prod_trial_report {
     sql: ${TABLE}.id ;;
     primary_key: yes
     hidden: yes
+  }
+
+  dimension_group: user_agent_time {
+    type: time
+    timeframes: [raw, time, date, week, month, quarter, year]
+    datatype: timestamp
+    sql: ${TABLE}.user_agent_time ;;
+    description: "Timestamp of the user agent"
   }
 
   dimension_group: trial_starts_at {
@@ -535,8 +544,6 @@ view: prod_trial_report {
   set: onboarding_details {
     fields: [
       user_id,
-      device_category,
-      user_agent,
       first_name,
       last_name,
       profile_email,
@@ -559,7 +566,10 @@ view: prod_trial_report {
       plan_level,
       ai_pdf_session_id,
       ai_pdf_created_at,
-      ai_pdf_status
+      ai_pdf_status,
+      device_category,
+      user_agent,
+      user_agent_time_time
     ]
   }
 }

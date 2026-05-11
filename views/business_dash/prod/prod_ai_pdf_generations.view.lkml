@@ -101,7 +101,6 @@ view: prod_ai_pdf_generations {
         WHEN REGEXP_CONTAINS(LOWER(oe.context_user_agent), r'(linux|x11)') AND NOT REGEXP_CONTAINS(LOWER(oe.context_user_agent), r'android') THEN 'LINUX_DESKTOP'
         ELSE 'OTHER'
       END AS device_category,
-      oe.`timestamp` AS user_agent_time,
 
       CASE
       WHEN base.trial_end IS NULL THEN 'No trial'
@@ -209,14 +208,6 @@ view: prod_ai_pdf_generations {
 
   # ——— AI PDF Dimensions ———
 
-  dimension_group: user_agent_time {
-    type: time
-    timeframes: [raw, time, date, week, month, quarter, year]
-    datatype: timestamp
-    sql: ${TABLE}.user_agent_time ;;
-    description: "Timestamp of the user agent"
-  }
-
   dimension_group: ai_pdf_created {
     type: time
     datatype: timestamp
@@ -280,9 +271,10 @@ view: prod_ai_pdf_generations {
 
   dimension_group: trial_starts_at {
     type: time
+    timeframes: [raw, time, date, week, month, quarter, year]
+    datatype: timestamp
     convert_tz: no
     sql: ${TABLE}.trial_starts ;;
-    timeframes: [date, week, month, quarter, year]
     label: "Trial Start"
     description: "Use this date dimension to compare with trial_start graph"
   }
@@ -475,7 +467,7 @@ view: prod_ai_pdf_generations {
       plan_interval,
       price,
       trial_status,
-      trial_starts_at_date,
+      trial_starts_at_time,
       trial_ends_at_date,
       effective_trial_ends_at_date,
       marketing_campaign,
@@ -483,8 +475,7 @@ view: prod_ai_pdf_generations {
       business_type,
       acquisition_source,
       device_category,
-      user_agent,
-      user_agent_time_time
+      user_agent
     ]
   }
 }

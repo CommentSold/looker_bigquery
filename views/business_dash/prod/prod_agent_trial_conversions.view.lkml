@@ -216,7 +216,6 @@ view: prod_agent_trial_conversions {
       oe.plan_level,
       oe.device_category,
       oe.user_agent,
-      oe.`timestamp` AS user_agent_time,
 
       CASE
       WHEN COALESCE(oe.marketing_campaign, mc.utm_campaign) IS NOT NULL THEN 'marketing_campaign'
@@ -343,14 +342,6 @@ view: prod_agent_trial_conversions {
     description: "Timestamp of the conversion event (paid_at for paid, invoice_created_at for unpaid)"
   }
 
-  dimension_group: user_agent_time {
-    type: time
-    timeframes: [raw, time, date, week, month, quarter, year]
-    datatype: timestamp
-    sql: ${TABLE}.user_agent_time ;;
-    description: "Timestamp of the user agent"
-  }
-
   dimension: invoice_status {
     type: string
     sql: ${TABLE}.invoice_status ;;
@@ -430,9 +421,10 @@ view: prod_agent_trial_conversions {
 
   dimension_group: trial_starts_at {
     type: time
+    timeframes: [raw, time, date, week, month, quarter, year]
+    datatype: timestamp
     convert_tz: no
     sql: ${TABLE}.trial_starts ;;
-    timeframes: [date, week, month, quarter, year]
   }
 
   dimension_group: trial_ends_at {
@@ -592,7 +584,7 @@ view: prod_agent_trial_conversions {
       plan_interval,
       price,
       trial_status,
-      trial_starts_at_date,
+      trial_starts_at_time,
       trial_ends_at_date,
       effective_trial_ends_at_date,
       utm_regintent,
@@ -605,8 +597,7 @@ view: prod_agent_trial_conversions {
       is_meta_setup_valid,
       meta_setup_last_seen_at_date,
       device_category,
-      user_agent,
-      user_agent_time_time
+      user_agent
     ]
   }
 }

@@ -37,7 +37,6 @@ view: prod_trial_cancellations {
         WHEN REGEXP_CONTAINS(LOWER(oe.context_user_agent), r'(linux|x11)') AND NOT REGEXP_CONTAINS(LOWER(oe.context_user_agent), r'android') THEN 'LINUX_DESKTOP'
         ELSE 'OTHER'
       END AS device_category,
-      oe.`timestamp` AS user_agent_time,
 
       COALESCE(fs.discounted_price, fs.price + fs.tax_amount) AS price,
       JSON_EXTRACT_SCALAR(plan, '$.productName') AS plan_name,
@@ -136,14 +135,6 @@ view: prod_trial_cancellations {
   dimension: subscription_id {
     type: string
     sql: ${TABLE}.subscription_id ;;
-  }
-
-  dimension_group: user_agent_time {
-    type: time
-    timeframes: [raw, time, date, week, month, quarter, year]
-    datatype: timestamp
-    sql: ${TABLE}.user_agent_time ;;
-    description: "Timestamp of the user agent"
   }
 
   dimension_group: cancellation {
@@ -280,9 +271,10 @@ view: prod_trial_cancellations {
 
   dimension_group: trial_starts_at {
     type: time
+    timeframes: [raw, time, date, week, month, quarter, year]
+    datatype: timestamp
     convert_tz: no
     sql: ${TABLE}.trial_starts ;;
-    timeframes: [date, week, month, quarter, year]
   }
 
   dimension_group: trial_ends_at {
@@ -345,7 +337,7 @@ view: prod_trial_cancellations {
       plan_interval,
       price,
       trial_status,
-      trial_starts_at_date,
+      trial_starts_at_time,
       trial_ends_at_date,
       effective_trial_ends_at_date,
       cancellation_date,
@@ -356,8 +348,7 @@ view: prod_trial_cancellations {
       onboarding_path,
       plan_level,
       device_category,
-      user_agent,
-      user_agent_time_time
+      user_agent
     ]
   }
 }

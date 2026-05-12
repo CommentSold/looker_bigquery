@@ -120,6 +120,7 @@ view: prod_active_paid_subscribers {
       AND LOWER(pprof.email) NOT LIKE '%@example.com'
       AND LOWER(pprof.email) NOT LIKE '%@popshoplive.com'
       AND LOWER(pprof.email) NOT LIKE '%@commentsold.com'
+      AND LOWER(pprof.email) NOT LIKE '%@pop.store'
       ))
       {% if date_range._is_filtered %}
       AND {% condition date_range %} TIMESTAMP(da.report_date) {% endcondition %}

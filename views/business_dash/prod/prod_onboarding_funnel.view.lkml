@@ -64,6 +64,7 @@ view: prod_onboarding_funnel {
         AND LOWER(pprof.email) NOT LIKE '%@example.com'
         AND LOWER(pprof.email) NOT LIKE '%@popshoplive.com'
         AND LOWER(pprof.email) NOT LIKE '%@commentsold.com'
+        AND LOWER(pprof.email) NOT LIKE '%@pop.store'
       ))
     ORDER BY acquisition_source DESC;;
   }

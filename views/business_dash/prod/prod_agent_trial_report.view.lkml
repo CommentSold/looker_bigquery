@@ -188,6 +188,7 @@ view: prod_agent_trial_report {
           AND LOWER(pprof.email) NOT LIKE '%@example.com'
           AND LOWER(pprof.email) NOT LIKE '%@popshoplive.com'
           AND LOWER(pprof.email) NOT LIKE '%@commentsold.com'
+          AND LOWER(pprof.email) NOT LIKE '%@pop.store'
         ))
       ORDER BY base.initial_start_date DESC
       ;;

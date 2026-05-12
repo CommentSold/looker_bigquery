@@ -176,6 +176,7 @@ view: prod_ai_pdf_generations {
       AND LOWER(pprof.email) NOT LIKE '%@example.com'
       AND LOWER(pprof.email) NOT LIKE '%@popshoplive.com'
       AND LOWER(pprof.email) NOT LIKE '%@commentsold.com'
+      AND LOWER(pprof.email) NOT LIKE '%@pop.store'
       ))
       )
 

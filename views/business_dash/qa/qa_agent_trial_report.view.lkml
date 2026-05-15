@@ -83,6 +83,18 @@ view: qa_agent_trial_report {
       FROM `popshoplive-26f81.commentchat.echo_me_agents`
       WHERE id LIKE '%meta_setup_%'
       QUALIFY ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY created_at DESC) = 1
+      ),
+
+      social_button_clicks AS (
+        SELECT
+          creator_id AS user_id,
+          COUNTIF(action = 'fb_connection_initiated') > 0 AS clicked_fb_connect,
+          COUNTIF(action = 'ig_connection_initiated') > 0 AS clicked_ig_connect,
+          COUNTIF(action IN ('fb_connection_initiated', 'ig_connection_initiated')) > 0 AS clicked_social_connect,
+          MAX(CASE WHEN action IN ('fb_connection_initiated', 'ig_connection_initiated') THEN created_at END) AS social_clicked_last_at
+        FROM `popshoplive-26f81.commentchat.user_activity`
+        WHERE action IN ('fb_connection_initiated', 'ig_connection_initiated')
+        GROUP BY creator_id
       )
 
       SELECT
@@ -140,7 +152,18 @@ view: qa_agent_trial_report {
       END AS meta_setup_status,
 
       ema.is_meta_setup_valid,
-      ema.meta_setup_last_seen_at
+      ema.meta_setup_last_seen_at,
+
+      COALESCE(sbc.clicked_social_connect, FALSE) AS clicked_social_connect,
+      COALESCE(sbc.clicked_fb_connect, FALSE)     AS clicked_fb_connect,
+      COALESCE(sbc.clicked_ig_connect, FALSE)     AS clicked_ig_connect,
+      CASE
+        WHEN sbc.clicked_fb_connect AND sbc.clicked_ig_connect THEN 'FB + IG'
+        WHEN sbc.clicked_fb_connect THEN 'FB only'
+        WHEN sbc.clicked_ig_connect THEN 'IG only'
+        ELSE 'None'
+      END AS social_button_clicked_status,
+      sbc.social_clicked_last_at
 
       FROM base
 
@@ -158,6 +181,9 @@ view: qa_agent_trial_report {
 
       LEFT JOIN echo_me_latest ema
       ON ema.user_id = base.user_id
+
+      LEFT JOIN social_button_clicks sbc
+      ON sbc.user_id = base.user_id
 
       WHERE
         -- Restrict to agent-related regintents only
@@ -358,6 +384,41 @@ view: qa_agent_trial_report {
     label: "Meta Setup Last Seen"
   }
 
+  # ——— Social button clicks (commentchat.user_activity) ———
+
+  dimension: social_button_clicked_status {
+    type: string
+    sql: ${TABLE}.social_button_clicked_status ;;
+    label: "Social Button Clicked"
+    description: "Whether the user clicked the FB and/or IG connect button. Values: 'FB + IG', 'FB only', 'IG only', 'None'."
+  }
+
+  dimension: clicked_social_connect {
+    type: yesno
+    sql: ${TABLE}.clicked_social_connect ;;
+    label: "Clicked Social Connect (Any)"
+    description: "TRUE if user has any fb_connection_initiated or ig_connection_initiated event in commentchat.user_activity."
+  }
+
+  dimension: clicked_fb_connect {
+    type: yesno
+    sql: ${TABLE}.clicked_fb_connect ;;
+    label: "Clicked FB Connect"
+  }
+
+  dimension: clicked_ig_connect {
+    type: yesno
+    sql: ${TABLE}.clicked_ig_connect ;;
+    label: "Clicked IG Connect"
+  }
+
+  dimension_group: social_clicked_last_at {
+    type: time
+    sql: ${TABLE}.social_clicked_last_at ;;
+    timeframes: [date, week, month, quarter, year]
+    label: "Social Button Last Clicked"
+  }
+
   # ——— Measures ———
 
   measure: total_agent_trials {
@@ -407,6 +468,21 @@ view: qa_agent_trial_report {
     value_format_name: decimal_1
   }
 
+  measure: social_connect_clicked_count {
+    type: count_distinct
+    sql: ${TABLE}.user_id ;;
+    filters: [clicked_social_connect: "Yes"]
+    label: "Users Who Clicked Social Connect"
+    drill_fields: [agent_drill_details*]
+  }
+
+  measure: pct_social_connect_clicked {
+    type: number
+    sql: SAFE_DIVIDE(${social_connect_clicked_count}, NULLIF(${total_agent_trials}, 0)) * 100 ;;
+    label: "% Agent Trials w/ Social Click"
+    value_format_name: decimal_1
+  }
+
   # ——— Drill set (includes Meta setup flag for ALL users) ———
 
   set: agent_drill_details {
@@ -435,7 +511,11 @@ view: qa_agent_trial_report {
       acquisition_source,
       meta_setup_status,
       is_meta_setup_valid,
-      meta_setup_last_seen_at_date
+      social_button_clicked_status,
+      meta_setup_last_seen_at_date,
+      clicked_fb_connect,
+      clicked_ig_connect,
+      social_clicked_last_at_date,
     ]
   }
 }

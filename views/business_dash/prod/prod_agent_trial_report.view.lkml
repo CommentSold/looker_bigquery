@@ -446,6 +446,23 @@ view: prod_agent_trial_report {
     label: "Social Button Last Clicked"
   }
 
+  dimension: meta_setup_with_social_status {
+    type: string
+    sql:
+    CASE
+      WHEN ${meta_setup_status} = 'Has Valid Meta Connection'
+        THEN 'Has Valid Meta Connection'
+      WHEN ${meta_setup_status} = 'Not Set Up'
+        AND ${clicked_social_connect} = TRUE
+        THEN 'Not Set Up (Clicked Social)'
+      WHEN ${meta_setup_status} = 'Not Set Up'
+        AND ${clicked_social_connect} = FALSE
+        THEN 'Not Set Up (No Social Click)'
+      ELSE 'Unknown'
+    END ;;
+    description: "Meta setup status combined with whether the user clicked any social connect option."
+  }
+
   # ——— Measures ———
 
   measure: total_agent_trials {

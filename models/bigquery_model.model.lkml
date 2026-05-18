@@ -27,6 +27,10 @@ explore: prod_trial_cancellations {
   label: "Trial Cancellations Prod"
   group_label: "Trial"
 }
+explore: prod_paid_subscription_cancellations {
+  label: "Paid Subscription Cancellations Prod"
+  group_label: "Trial"
+}
 explore: prod_trial_conversions {
   label: "Trial Conversions Prod"
   group_label: "Trial"

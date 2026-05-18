@@ -99,9 +99,30 @@ view: prod_trial_cancellations {
       fs.trial_end IS NOT NULL
       AND fs.status IN ('canceled', 'unpaid')
       AND (
-      fs.cancelled_at <= fs.trial_end
-      OR fs.current_period_end = fs.trial_end
-      OR (fs.status = 'unpaid' AND fs.cancelled_at IS NULL AND fs.trial_end <= CURRENT_TIMESTAMP())
+        -- Branch 1: cancelled during or before trial
+        fs.cancelled_at <= fs.trial_end
+        -- Branch 2: subscription period never advanced past trial (Stripe didn't bill)
+        OR fs.current_period_end = fs.trial_end
+        -- Branch 3: status went unpaid without an explicit cancel
+        OR (fs.status = 'unpaid' AND fs.cancelled_at IS NULL AND fs.trial_end <= CURRENT_TIMESTAMP())
+        -- Branch 4: NEW. Catches the ~10 edge-case subs where Stripe advanced
+        -- current_period_end after trial, billed once, all retries failed, and
+        -- cancelled_at landed in the post-trial billing period. We're confident
+        -- these are trial cancellations because of the NOT EXISTS guard below.
+        OR (fs.cancelled_at IS NOT NULL AND fs.cancelled_at > fs.trial_end)
+      )
+      AND NOT EXISTS (
+        -- Excludes the 7 paid-then-failed subs currently caught by Branch 3.
+        -- Anyone with a successful post-trial payment belongs in
+        -- prod_paid_subscription_cancellations, not here.
+        SELECT 1
+        FROM `dbt_popshop.fact_seller_subscription_invoice` inv
+        WHERE inv.subscription_id = fs.subscription_id
+          AND inv.is_deleted = FALSE
+          AND inv.status = 'paid'
+          AND inv.amount_due > 0
+          AND inv.amount_paid > 0
+          AND inv.updated_at >= fs.trial_end
       )
       AND JSON_EXTRACT_SCALAR(plan, '$.planType') = 'plan'
       AND (pprof.email IS NULL OR (

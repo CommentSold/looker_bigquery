@@ -1,11 +1,22 @@
-view: prod_trial_conversions {
+view: prod_paid_subscription_cancellations {
   derived_table: {
     sql:
       WITH subscriptions AS (
         SELECT
           subscription_id,
-          trial_end AS trial_end_ts,
-          status AS sub_status
+          user_id,
+          initial_start_date,
+          trial_end,
+          cancelled_at,
+          cancellation_applied_at,
+          updated_at,
+          current_period_start,
+          current_period_end,
+          status,
+          discounted_price,
+          price,
+          tax_amount,
+          plans
         FROM `dbt_popshop.fact_seller_subscription`
         WHERE is_deleted = FALSE
       ),
@@ -34,7 +45,7 @@ view: prod_trial_conversions {
       GROUP BY 1, 2
       ),
 
-      -- Only invoices where amount_due > 0 (excludes $0 trial invoices)
+      -- Only invoices that represent real billing attempts (excludes $0 trial invoices)
       billable_invoices AS (
       SELECT
       invoice_id,
@@ -44,7 +55,7 @@ view: prod_trial_conversions {
       WHERE max_amount_due > 0
       ),
 
-      -- PAID: first paid event per billable invoice
+      -- For each billable invoice, find the first 'paid' event
       first_paid_event_per_invoice AS (
       SELECT
       ih.invoice_id,
@@ -71,93 +82,93 @@ view: prod_trial_conversions {
       WHERE rn = 1
       ),
 
-      first_paid_conversion_per_sub AS (
+      -- Per subscription: did they ever successfully pay a billable invoice
+      -- AFTER trial_end? Track count and first/last paid timestamps.
+      sub_paid_history AS (
       SELECT
       s.subscription_id,
-      p.paid_at,
-      ROW_NUMBER() OVER (
-      PARTITION BY s.subscription_id
-      ORDER BY p.paid_at ASC
-      ) AS rn
+      COUNT(DISTINCT p.invoice_id) AS successful_paid_invoice_count,
+      MIN(p.paid_at) AS first_paid_at,
+      MAX(p.paid_at) AS last_paid_at
       FROM subscriptions s
       JOIN paid_billable_invoices p
-      ON s.subscription_id = p.subscription_id
-      AND p.paid_at >= s.trial_end_ts
+      ON p.subscription_id = s.subscription_id
+      AND p.paid_at >= s.trial_end
+      GROUP BY 1
       ),
 
-      -- UNPAID: subscriptions with status='unpaid' that have a billable invoice
-      -- but did NOT appear in paid_conversions
-      unpaid_subs AS (
+      -- The candidate set: any non-active subscription that had >=1 successful
+      -- post-trial paid invoice. This is the "paid then cancelled" cohort,
+      -- whether stripe marked them 'unpaid' (still retrying / gave up) or the
+      -- subscription eventually flipped to 'canceled'.
+      paid_then_cancelled AS (
       SELECT
       s.subscription_id,
-      bi.invoice_created_at AS event_at,
-      'unpaid' AS invoice_status,
-      ROW_NUMBER() OVER (
-      PARTITION BY s.subscription_id
-      ORDER BY bi.invoice_created_at ASC
-      ) AS rn
+      s.user_id,
+      s.initial_start_date,
+      s.trial_end,
+      s.cancelled_at,
+      s.cancellation_applied_at,
+      s.updated_at,
+      s.current_period_start,
+      s.current_period_end,
+      s.status,
+      s.discounted_price,
+      s.price,
+      s.tax_amount,
+      s.plans,
+      ph.successful_paid_invoice_count,
+      ph.first_paid_at,
+      ph.last_paid_at
       FROM subscriptions s
-      JOIN billable_invoices bi
-      ON bi.subscription_id = s.subscription_id
-      AND bi.invoice_created_at >= s.trial_end_ts
-      WHERE s.sub_status = 'unpaid'
-      AND s.subscription_id NOT IN (
-      SELECT subscription_id FROM first_paid_conversion_per_sub WHERE rn = 1
-      )
-      ),
-
-      unpaid_conversions AS (
-      SELECT
-      subscription_id,
-      event_at,
-      invoice_status
-      FROM unpaid_subs
-      WHERE rn = 1
-      ),
-
-      paid_conversions AS (
-      SELECT
-      subscription_id,
-      paid_at AS event_at,
-      'paid' AS invoice_status
-      FROM first_paid_conversion_per_sub
-      WHERE rn = 1
-      ),
-
-      -- UNION paid + unpaid only
-      combined AS (
-      SELECT * FROM paid_conversions
-      UNION ALL
-      SELECT * FROM unpaid_conversions
+      JOIN sub_paid_history ph
+      ON ph.subscription_id = s.subscription_id
+      WHERE s.status != 'active'
+      AND ph.successful_paid_invoice_count >= 1
       )
 
       SELECT
-      combined.subscription_id,
-      combined.event_at,
-      combined.invoice_status,
+      ptc.subscription_id,
+      ptc.user_id,
+      ptc.status AS subscription_status,
+      ptc.successful_paid_invoice_count,
+      ptc.first_paid_at,
+      ptc.last_paid_at,
 
-      -- ✅ NEW: cohort churn flag.
-      -- TRUE when this paid sub is now non-active AND had >=1 successful post-trial payment.
-      -- Mirrors the 'cancelled' cohort definition in prod_paid_subscription_cancellations.
-      -- Always FALSE for invoice_status = 'unpaid' (those never paid in the first place,
-      -- so they can't be a "paid sub that cancelled").
+      -- Anchor on trial_starts (initial_start_date) per requirement: aligns with
+      -- prod_trial_conversions and prod_trial_cancellations on the same time axis.
+      ptc.initial_start_date AS trial_starts,
+      ptc.trial_end AS trial_ends,
+
+      COALESCE(
       CASE
-      WHEN combined.invoice_status = 'paid'
-      AND fs.status != 'active'
-      THEN TRUE
-      ELSE FALSE
-      END AS did_paid_sub_cancel,
+      WHEN ptc.cancellation_applied_at IS NOT NULL
+      AND ptc.cancellation_applied_at < ptc.trial_end
+      THEN ptc.cancellation_applied_at
+      END,
+      ptc.trial_end
+      ) AS effective_trial_end,
 
-      -- Drilldown fields from related tables
-      fs.user_id,
-      fs.status AS current_subscription_status,
+      -- Date we treat the paid subscription as having "ended". Prefer the
+      -- explicit cancelled_at; fall back to current_period_end (for unpaid
+      -- subs that are still in dunning the period_end is when access lapsed);
+      -- finally fall back to updated_at.
+      DATE(COALESCE(ptc.cancelled_at, ptc.current_period_end, ptc.updated_at)) AS subscription_cancellation_date,
+
+      CASE
+      WHEN ptc.status = 'unpaid' THEN 'payment_failed'
+      WHEN ptc.status = 'canceled' THEN 'cancelled'
+      ELSE ptc.status
+      END AS cancellation_reason,
+
+      -- Drilldown fields
       prof.url_code AS sign_up_url_code,
       prof.username AS sign_up_user_username,
       pprof.email AS sign_up_user_email,
-      -- ✅ Profile JSON fields (from dim_private_profiles.private_profile)
       JSON_VALUE(pprof.private_profile, '$.email') AS profile_email,
       JSON_VALUE(pprof.private_profile, '$.sellerShippingAddress.firstName') AS first_name,
       JSON_VALUE(pprof.private_profile, '$.sellerShippingAddress.lastName')  AS last_name,
+
       oe.context_campaign_campaign AS marketing_campaign,
       oe.utm_regintent,
       oe.business_type,
@@ -175,33 +186,9 @@ view: prod_trial_conversions {
       ELSE 'OTHER'
       END AS device_category,
 
-      COALESCE(fs.discounted_price, fs.price + fs.tax_amount) AS price,
+      COALESCE(ptc.discounted_price, ptc.price + ptc.tax_amount) AS price,
       JSON_EXTRACT_SCALAR(plan, '$.productName') AS plan_name,
       JSON_EXTRACT_SCALAR(plan, '$.interval') AS plan_interval,
-      fs.initial_start_date AS trial_starts,
-      fs.trial_end AS trial_ends,
-
-      COALESCE(
-      CASE
-      WHEN fs.cancellation_applied_at IS NOT NULL
-      AND fs.cancellation_applied_at < fs.trial_end
-      THEN fs.cancellation_applied_at
-      END,
-      fs.trial_end
-      ) AS effective_trial_end,
-
-      CASE
-      WHEN fs.trial_end IS NULL THEN 'No trial'
-      WHEN DATE(COALESCE(
-      CASE
-      WHEN fs.cancellation_applied_at IS NOT NULL
-      AND fs.cancellation_applied_at < fs.trial_end
-      THEN fs.cancellation_applied_at
-      END,
-      fs.trial_end
-      )) <= CURRENT_DATE() THEN 'Ended'
-      ELSE 'Started'
-      END AS trial_status,
 
       CASE
       WHEN oe.user_id IS NULL THEN 'event_not_fired'
@@ -209,19 +196,15 @@ view: prod_trial_conversions {
       ELSE 'organic_walk-in'
       END AS acquisition_source
 
-      FROM combined
+      FROM paid_then_cancelled ptc
 
-      JOIN `dbt_popshop.fact_seller_subscription` fs
-      ON fs.subscription_id = combined.subscription_id
-      AND fs.is_deleted = FALSE
-
-      CROSS JOIN UNNEST(fs.plans) AS plan
+      CROSS JOIN UNNEST(ptc.plans) AS plan
 
       LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_profiles` prof
-      ON prof.user_id = fs.user_id
+      ON prof.user_id = ptc.user_id
 
       LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_private_profiles` pprof
-      ON pprof.user_id = fs.user_id
+      ON pprof.user_id = ptc.user_id
 
       LEFT JOIN (
       SELECT *
@@ -232,7 +215,7 @@ view: prod_trial_conversions {
       )
       WHERE rn = 1
       ) oe
-      ON oe.user_id = fs.user_id
+      ON oe.user_id = ptc.user_id
 
       WHERE
       JSON_EXTRACT_SCALAR(plan, '$.planType') = 'plan'
@@ -244,7 +227,7 @@ view: prod_trial_conversions {
       AND LOWER(pprof.email) NOT LIKE '%@pop.store'
       ))
       {% if date_range._is_filtered %}
-      AND {% condition date_range %} TIMESTAMP(fs.initial_start_date) {% endcondition %}
+      AND {% condition date_range %} TIMESTAMP(ptc.initial_start_date) {% endcondition %}
       {% endif %}
       ;;
   }
@@ -253,48 +236,21 @@ view: prod_trial_conversions {
 
   filter: date_range {
     type: date
-    description: "Filter by trial start date. Use 'is in range' in the UI to pick start and end. Optional."
+    description: "Filter by trial start date (initial_start_date). Use 'is in range' in the UI to pick start and end. Optional."
   }
 
   # ——— Dimensions ———
-
-  dimension: subscription_id {
-    type: string
-    sql: ${TABLE}.subscription_id ;;
-  }
 
   dimension: primary_key {
     type: string
     primary_key: yes
     hidden: yes
-    sql: CONCAT(${TABLE}.subscription_id, '-', ${TABLE}.invoice_status) ;;
+    sql: ${TABLE}.subscription_id ;;
   }
 
-  dimension_group: event {
-    type: time
-    timeframes: [raw, time, date, week, month, quarter, year]
-    datatype: timestamp
-    sql: ${TABLE}.event_at ;;
-    description: "Timestamp of the conversion event (paid_at for paid, invoice_created_at for unpaid)"
-  }
-
-  dimension: invoice_status {
+  dimension: subscription_id {
     type: string
-    sql: ${TABLE}.invoice_status ;;
-    description: "Invoice status: paid or unpaid only."
-  }
-
-  # ✅ NEW: paid-sub churn flag
-  dimension: did_paid_sub_cancel {
-    type: yesno
-    sql: ${TABLE}.did_paid_sub_cancel ;;
-    description: "TRUE if this is a paid converter (invoice_status='paid') whose subscription is now non-active. Used for cohort churn rate."
-  }
-
-  dimension: current_subscription_status {
-    type: string
-    sql: ${TABLE}.current_subscription_status ;;
-    description: "Current status of the underlying subscription (active, canceled, unpaid, etc.)."
+    sql: ${TABLE}.subscription_id ;;
   }
 
   dimension: user_id {
@@ -302,12 +258,80 @@ view: prod_trial_conversions {
     sql: ${TABLE}.user_id ;;
   }
 
+  dimension: subscription_status {
+    type: string
+    sql: ${TABLE}.subscription_status ;;
+    description: "Current subscription status (unpaid, canceled, etc.). Excludes 'active'."
+  }
+
+  dimension: cancellation_reason {
+    type: string
+    sql: ${TABLE}.cancellation_reason ;;
+    description: "payment_failed = status 'unpaid' (Stripe retries exhausted / insufficient funds / declined). cancelled = explicitly canceled after at least one successful payment."
+  }
+
+  dimension: successful_paid_invoice_count {
+    type: number
+    sql: ${TABLE}.successful_paid_invoice_count ;;
+    description: "Number of successful billable invoices paid after trial_end. Always >= 1 in this view."
+  }
+
+  dimension_group: first_paid_at {
+    type: time
+    timeframes: [raw, time, date, week, month, quarter, year]
+    datatype: timestamp
+    convert_tz: no
+    sql: ${TABLE}.first_paid_at ;;
+    description: "Timestamp of the first successful post-trial payment."
+  }
+
+  dimension_group: last_paid_at {
+    type: time
+    timeframes: [raw, time, date, week, month, quarter, year]
+    datatype: timestamp
+    convert_tz: no
+    sql: ${TABLE}.last_paid_at ;;
+    description: "Timestamp of the most recent successful post-trial payment."
+  }
+
+  dimension_group: subscription_cancelled {
+    type: time
+    convert_tz: no
+    datatype: date
+    sql: ${TABLE}.subscription_cancellation_date ;;
+    timeframes: [date, week, month, quarter, year]
+    description: "Date the paid subscription ended (cancelled_at, else current_period_end, else updated_at)."
+  }
+
+  # Primary time axis (matches prod_trial_conversions / prod_trial_cancellations)
+  dimension_group: trial_starts_at {
+    type: time
+    timeframes: [raw, time, date, week, month, quarter, year]
+    datatype: timestamp
+    convert_tz: no
+    sql: ${TABLE}.trial_starts ;;
+    description: "Trial start date (initial_start_date). Use this as the chart x-axis to align with the trial conversions / cancellations views."
+  }
+
+  dimension_group: trial_ends_at {
+    type: time
+    convert_tz: no
+    sql: ${TABLE}.trial_ends ;;
+    timeframes: [date, week, month, quarter, year]
+  }
+
+  dimension_group: effective_trial_ends_at {
+    type: time
+    convert_tz: no
+    sql: ${TABLE}.effective_trial_end ;;
+    timeframes: [date, week, month, quarter, year]
+  }
+
   dimension: sign_up_user_url {
     type: string
     sql: 'https://pop.store/' || ${TABLE}.sign_up_url_code ;;
   }
 
-  # ✅ New profile JSON dimensions
   dimension: profile_email {
     type: string
     sql: ${TABLE}.profile_email ;;
@@ -404,110 +428,32 @@ view: prod_trial_conversions {
     label: "Interval"
   }
 
-  dimension: trial_status {
-    type: string
-    sql: ${TABLE}.trial_status ;;
-  }
-
-  dimension_group: trial_starts_at {
-    type: time
-    timeframes: [raw, time, date, week, month, quarter, year]
-    datatype: timestamp
-    convert_tz: no
-    sql: ${TABLE}.trial_starts ;;
-  }
-
-  dimension_group: trial_ends_at {
-    type: time
-    convert_tz: no
-    sql: ${TABLE}.trial_ends ;;
-    timeframes: [date, week, month, quarter, year]
-  }
-
-  dimension_group: effective_trial_ends_at {
-    type: time
-    convert_tz: no
-    sql: ${TABLE}.effective_trial_end ;;
-    timeframes: [date, week, month, quarter, year]
-  }
-
   # ——— Measures ———
 
-  measure: trial_conversion_count {
-    type: count
-    description: "Count of subscriptions by invoice status (paid or unpaid)"
+  measure: paid_subscriptions_cancelled {
+    type: count_distinct
+    sql: ${TABLE}.subscription_id ;;
+    label: "Paid Subscriptions Cancelled"
+    description: "Distinct subscriptions that had >=1 successful post-trial payment and are now non-active (payment failed / cancelled)."
     drill_fields: [drilldown_details*]
   }
 
-  measure: paid_converted_trials {
-    type: count
-    filters: [invoice_status: "paid"]
-    description: "Count of subscriptions that converted from trial to paid"
+  measure: payment_failed_count {
+    type: count_distinct
+    sql: ${TABLE}.subscription_id ;;
+    filters: [cancellation_reason: "payment_failed"]
+    label: "Payment Failed (Stripe Unpaid)"
+    description: "Paid subs that flipped to 'unpaid' after Stripe exhausted retry attempts (insufficient funds, declined, etc.)."
     drill_fields: [drilldown_details*]
   }
 
-  measure: unpaid_trials {
-    type: count
-    filters: [invoice_status: "unpaid"]
-    description: "Count of subscriptions marked unpaid at subscription level (payment failed)"
+  measure: explicitly_cancelled_count {
+    type: count_distinct
+    sql: ${TABLE}.subscription_id ;;
+    filters: [cancellation_reason: "cancelled"]
+    label: "Explicitly Cancelled (Post-Paid)"
+    description: "Paid subs that were explicitly cancelled (status = 'canceled') after at least one successful payment."
     drill_fields: [drilldown_details*]
-  }
-
-  measure: paid_converted_trials_last_28_days {
-    type: count
-    filters: [invoice_status: "paid", trial_starts_at_date: "28 days"]
-    description: "Count of trial-to-paid conversions in the last 28 days, by trial start date"
-    drill_fields: [drilldown_details*]
-  }
-
-  # ✅ NEW: Cohort churn measures
-  # By trial start cohort: of trials that started in month X, what percentage of
-  # the paid converters are now non-active (cancelled / payment failed)?
-
-  measure: paid_subs_cancelled_from_cohort {
-    type: count
-    filters: [
-      invoice_status: "paid",
-      did_paid_sub_cancel: "yes"
-    ]
-    label: "Paid Subs Cancelled From Cohort"
-    description: "Of the paid converters in this trial-start cohort, how many are now non-active. Numerator for cohort paid-churn rate."
-    drill_fields: [drilldown_details*]
-  }
-
-  measure: paid_subs_still_active_from_cohort {
-    type: count
-    filters: [
-      invoice_status: "paid",
-      did_paid_sub_cancel: "no"
-    ]
-    label: "Paid Subs Still Active From Cohort"
-    description: "Of the paid converters in this trial-start cohort, how many are still active."
-    drill_fields: [drilldown_details*]
-  }
-
-  measure: paid_sub_cohort_churn_rate {
-    type: number
-    sql:
-      SAFE_DIVIDE(
-        ${paid_subs_cancelled_from_cohort},
-        ${paid_converted_trials}
-      ) ;;
-    value_format_name: percent_1
-    label: "Paid Sub Cohort Churn Rate"
-    description: "paid_subs_cancelled_from_cohort / paid_converted_trials. By trial-start cohort: percentage of paid converters who are now non-active. Lower is better."
-  }
-
-  measure: paid_sub_cohort_retention_rate {
-    type: number
-    sql:
-      SAFE_DIVIDE(
-        ${paid_subs_still_active_from_cohort},
-        ${paid_converted_trials}
-      ) ;;
-    value_format_name: percent_1
-    label: "Paid Sub Cohort Retention Rate"
-    description: "paid_subs_still_active_from_cohort / paid_converted_trials. Complement of churn rate. Higher is better."
   }
 
   # ——— Drill Set ———
@@ -522,13 +468,15 @@ view: prod_trial_conversions {
       sign_up_user_email,
       sign_up_user_url,
       subscription_id,
-      invoice_status,
-      current_subscription_status,
-      did_paid_sub_cancel,
+      subscription_status,
+      cancellation_reason,
+      successful_paid_invoice_count,
+      first_paid_at_time,
+      last_paid_at_time,
+      subscription_cancelled_date,
       plan_name,
       plan_interval,
       price,
-      trial_status,
       trial_starts_at_time,
       trial_ends_at_date,
       effective_trial_ends_at_date,

@@ -4,12 +4,12 @@ view: prod_paid_subscription_cancellations {
       WITH subscriptions AS (
         SELECT
           subscription_id,
-          user_id,
+          s.user_id,
           initial_start_date,
           trial_end,
           cancelled_at,
           cancellation_applied_at,
-          updated_at,
+          s.updated_at,
           current_period_start,
           current_period_end,
           status,
@@ -17,8 +17,13 @@ view: prod_paid_subscription_cancellations {
           price,
           tax_amount,
           plans
-        FROM `dbt_popshop.fact_seller_subscription`
-        WHERE is_deleted = FALSE
+        FROM `dbt_popshop.fact_seller_subscription` s
+        INNER JOIN `popshoplive-26f81.dbt_popshop.dim_profiles` p
+          ON p.user_id = s.user_id
+        WHERE s.is_deleted = FALSE
+          AND s.trial_end IS NOT NULL
+          AND p.apps_pop_store = TRUE
+          AND p.user_type IN ('seller', 'verifiedSeller')
       ),
 
       invoice_history AS (
@@ -153,11 +158,20 @@ view: prod_paid_subscription_cancellations {
       -- explicit cancelled_at; fall back to current_period_end (for unpaid
       -- subs that are still in dunning the period_end is when access lapsed);
       -- finally fall back to updated_at.
-      DATE(COALESCE(ptc.cancelled_at, ptc.current_period_end, ptc.updated_at)) AS subscription_cancellation_date,
+      DATE(COALESCE(
+        ptc.cancelled_at,
+        CASE
+          WHEN ptc.current_period_end < CURRENT_TIMESTAMP()
+          THEN ptc.current_period_end
+        END,
+        ptc.updated_at
+      )) AS subscription_cancellation_date,
 
       CASE
       WHEN ptc.status = 'unpaid' THEN 'payment_failed'
+      WHEN ptc.status = 'past_due' THEN 'payment_retrying'
       WHEN ptc.status = 'canceled' THEN 'cancelled'
+      WHEN ptc.status = 'incomplete_expired' THEN 'payment_failed'
       ELSE ptc.status
       END AS cancellation_reason,
 
@@ -207,13 +221,28 @@ view: prod_paid_subscription_cancellations {
       ON pprof.user_id = ptc.user_id
 
       LEFT JOIN (
-      SELECT *
-      FROM (
-      SELECT *,
-      ROW_NUMBER() OVER (PARTITION BY user_id) AS rn
-      FROM `popshoplive-26f81.popstore.popstore_onboarding_screen_action`
-      )
-      WHERE rn = 1
+        SELECT
+          user_id,
+          context_campaign_campaign,
+          context_campaign_onboarding_path,
+          context_campaign_planlevel,
+          context_user_agent,
+          utm_regintent,
+          business_type
+        FROM `popshoplive-26f81.popstore.popstore_onboarding_screen_action`
+        WHERE (scene = 'onboarding' OR scene IS NULL)
+          AND (step_name = 'onboarding_complete' OR step_name IS NULL)
+        QUALIFY ROW_NUMBER() OVER (
+          PARTITION BY user_id
+          ORDER BY
+            CASE
+              WHEN context_campaign_campaign IS NOT NULL
+                OR (utm_regintent IS NOT NULL AND utm_regintent != 'generic')
+                OR (business_type IS NOT NULL AND business_type != 'generic')
+              THEN 0 ELSE 1
+            END,
+            `timestamp` DESC
+        ) = 1
       ) oe
       ON oe.user_id = ptc.user_id
 
@@ -453,6 +482,15 @@ view: prod_paid_subscription_cancellations {
     filters: [cancellation_reason: "cancelled"]
     label: "Explicitly Cancelled (Post-Paid)"
     description: "Paid subs that were explicitly cancelled (status = 'canceled') after at least one successful payment."
+    drill_fields: [drilldown_details*]
+  }
+
+  measure: payment_retrying_count {
+    type: count_distinct
+    sql: ${TABLE}.subscription_id ;;
+    filters: [cancellation_reason: "payment_retrying"]
+    label: "Payment Retrying (Past Due)"
+    description: "Paid subs in Stripe dunning — payment failed but retries haven't exhausted yet. May recover or roll into payment_failed."
     drill_fields: [drilldown_details*]
   }
 

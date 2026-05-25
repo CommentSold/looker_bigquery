@@ -129,6 +129,14 @@ explore: prod_signup_conversion_funnel {
   label: "Signup Conversion Funnel Prod"
   group_label: "Signup"
 }
+explore: prod_current_saas_subscriptions {
+  label: "Current SAAS Subscriptions Prod"
+  group_label: "Subscriptions"
+}
+explore: prod_subscription_churn {
+  label: "Subscription Churn Prod"
+  group_label: "Subscriptions"
+}
 
 # Marketing Dash -> QA #
 

@@ -8,13 +8,32 @@ view: prod_onboarding_funnel {
     sql: WITH onboarding_events AS (
       SELECT
         context_campaign_campaign AS marketing_campaign,
+        context_user_agent AS user_agent,
         utm_regintent,
         business_type,
         `timestamp`,
         user_id,
         scene,
         step_name,
-        onboarding_session_id
+        onboarding_session_id,
+        COALESCE(
+          CASE
+            WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(bot|crawler|spider|crawl|slurp|googlebot|bingpreview|facebookexternalhit|twitterbot|linkedinbot|discordbot|telegrambot|google-read-aloud)') THEN 'BOT'
+            WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'instagram') THEN 'WEBVIEW_INSTAGRAM'
+            WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(fban|fbav|facebook)') THEN 'WEBVIEW_FACEBOOK'
+            WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'tiktok') THEN 'WEBVIEW_TIKTOK'
+            WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'snapchat') THEN 'WEBVIEW_SNAPCHAT'
+            WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(linkedin|linkedinapp)') THEN 'WEBVIEW_LINKEDIN'
+            WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(wv|webview|meta-iab|metaiab|iabmv/1|whatsapp|line|gsa/|googleapp/|youtube|reddit)') THEN 'WEBVIEW_OTHER'
+            WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(iphone|ipad|ipod|cpu iphone os|cpu os)') THEN 'IOS'
+            WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'android') THEN 'ANDROID'
+            WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(windows nt|win64|wow64)') THEN 'WINDOWS_DESKTOP'
+            WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(macintosh|mac os x)') AND NOT REGEXP_CONTAINS(LOWER(context_user_agent), r'(iphone|ipad)') THEN 'MACOS_DESKTOP'
+            WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(linux|x11)') AND NOT REGEXP_CONTAINS(LOWER(context_user_agent), r'android') THEN 'LINUX_DESKTOP'
+            ELSE 'OTHER'
+          END,
+          "No Onboarding Event"
+        ) AS device_category
       FROM `popshoplive-26f81.popstore.popstore_onboarding_screen_action`
       WHERE (scene = 'onboarding' OR scene IS NULL)
         AND (step_name = 'onboarding_complete' OR step_name IS NULL)
@@ -38,6 +57,7 @@ view: prod_onboarding_funnel {
       prof.username AS sign_up_user_username,
       pprof.email AS sign_up_user_email,
       oe.marketing_campaign,
+      oe.device_category,
       COALESCE(oe.utm_regintent, mc.utm_regintent) AS utm_regintent,
       oe.business_type,
       oe.`timestamp`,
@@ -113,6 +133,11 @@ view: prod_onboarding_funnel {
     sql: ${TABLE}.marketing_campaign ;;
   }
 
+  dimension: device_category {
+    type: string
+    sql: ${TABLE}.device_category ;;
+  }
+
   dimension: utm_regintent {
     type: string
     sql: ${TABLE}.utm_regintent ;;
@@ -140,6 +165,21 @@ view: prod_onboarding_funnel {
     drill_fields: [onboarding_details*]
   }
 
+  measure: count_distinct_users {
+    type: count_distinct
+    sql: ${sign_up_user_id} ;;
+    description: "Distinct count of signed-up users. Safe for device/regintent breakdowns where a user might appear on multiple rows."
+    drill_fields: [onboarding_details*]
+  }
+
+  measure: count_distinct_users_completed {
+    type: count_distinct
+    sql: ${sign_up_user_id} ;;
+    filters: [step_name: "onboarding_complete"]
+    description: "Distinct users who completed onboarding."
+    drill_fields: [onboarding_details*]
+  }
+
   set: onboarding_details {
     fields: [
       sign_up_store_created_at_time,
@@ -150,6 +190,7 @@ view: prod_onboarding_funnel {
       marketing_campaign,
       utm_regintent,
       business_type,
+      device_category
     ]
   }
 }

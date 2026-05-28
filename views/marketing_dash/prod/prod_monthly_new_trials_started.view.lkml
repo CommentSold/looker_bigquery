@@ -52,14 +52,96 @@ view: prod_monthly_new_trials_started {
       ])
       ),
 
-      -- Marketing capture fallback for utm_regintent
-      marketing_capture AS (
+      onboarding_events AS (
+      SELECT
+      context_campaign_campaign AS marketing_campaign,
+      context_campaign_onboarding_path AS onboarding_path,
+      context_campaign_planlevel AS plan_level,
+      context_user_agent AS user_agent,
+      utm_regintent,
+      business_type,
+      `timestamp`,
+      user_id,
+      scene,
+      step_name,
+      onboarding_session_id,
+      CASE
+        WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(bot|crawler|spider|crawl|slurp|googlebot|bingpreview|facebookexternalhit|twitterbot|linkedinbot|discordbot|telegrambot|google-read-aloud)') THEN 'BOT'
+        WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(wv|webview|meta-iab|metaiab|facebook|fban|fbav|instagram|iabmv/1|whatsapp|line|linkedinapp|snapchat|gsa/|googleapp/|youtube|tiktok|reddit)') THEN 'WEBVIEW'
+        WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(iphone|ipad|ipod|cpu iphone os|cpu os)') THEN 'IOS'
+        WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'android') THEN 'ANDROID'
+        WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(windows nt|win64|wow64)') THEN 'WINDOWS_DESKTOP'
+        WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(macintosh|mac os x)') AND NOT REGEXP_CONTAINS(LOWER(context_user_agent), r'(iphone|ipad)') THEN 'MACOS_DESKTOP'
+        WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(linux|x11)') AND NOT REGEXP_CONTAINS(LOWER(context_user_agent), r'android') THEN 'LINUX_DESKTOP'
+        ELSE 'OTHER'
+      END AS device_category
+      FROM `popshoplive-26f81.popstore.popstore_onboarding_screen_action`
+      WHERE (scene = 'onboarding' OR scene IS NULL)
+      AND (step_name = 'onboarding_complete' OR step_name IS NULL)
+      ),
+
+      -- ✅ Deduplicate to the most relevant onboarding event per user.
+      -- Prefer rows where the marketing/intent/business_type fields are actually populated,
+      -- and among those pick the most recent by timestamp. This prevents picking an
+      -- arbitrary 'generic' row.
+      onboarding_events_dedup AS (
       SELECT
       user_id,
-      JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_campaign') AS utm_campaign,
-      JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_source') AS utm_source,
-      JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_regintent') AS utm_regintent
-      FROM `popshoplive-26f81.dbt_popshop.dim_private_profiles`
+      marketing_campaign,
+      onboarding_path,
+      plan_level,
+      utm_regintent,
+      business_type,
+      `timestamp`,
+      onboarding_session_id,
+      device_category,
+      user_agent
+      FROM onboarding_events
+      QUALIFY ROW_NUMBER() OVER (
+      PARTITION BY user_id
+      ORDER BY
+      CASE
+      WHEN marketing_campaign IS NOT NULL
+      OR (utm_regintent IS NOT NULL AND utm_regintent != 'generic')
+      OR (business_type IS NOT NULL AND business_type != 'generic')
+      THEN 0 ELSE 1
+      END,
+      `timestamp` DESC
+      ) = 1
+      ),
+
+      marketing_capture AS (
+        SELECT
+        user_id,
+        JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_campaign') AS utm_campaign,
+        JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_source') AS utm_source,
+        JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_regintent') AS utm_regintent,
+        JSON_VALUE(private_profile, '$.onboardingMarketingCapture.url') AS url,
+        JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent') AS user_agent,
+        JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_onboarding_path') AS onboarding_path,
+        JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_planlevel') AS plan_level,
+        JSON_VALUE(private_profile, '$.email') AS profile_email,
+        JSON_VALUE(private_profile, '$.sellerShippingAddress.firstName') AS first_name,
+        JSON_VALUE(private_profile, '$.sellerShippingAddress.lastName')  AS last_name,
+        COALESCE(
+          CASE
+            WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(bot|crawler|spider|crawl|slurp|googlebot|bingpreview|facebookexternalhit|twitterbot|linkedinbot|discordbot|telegrambot|google-read-aloud)') THEN 'BOT'
+            WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'instagram') THEN 'WEBVIEW_INSTAGRAM'
+            WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(fban|fbav|facebook)') THEN 'WEBVIEW_FACEBOOK'
+            WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'tiktok') THEN 'WEBVIEW_TIKTOK'
+            WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'snapchat') THEN 'WEBVIEW_SNAPCHAT'
+            WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(linkedin|linkedinapp)') THEN 'WEBVIEW_LINKEDIN'
+            WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(wv|webview|meta-iab|metaiab|iabmv/1|whatsapp|line|gsa/|googleapp/|youtube|reddit)') THEN 'WEBVIEW_OTHER'
+            WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(iphone|ipad|ipod|cpu iphone os|cpu os)') THEN 'IOS'
+            WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'android') THEN 'ANDROID'
+            WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(windows nt|win64|wow64)') THEN 'WINDOWS_DESKTOP'
+            WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(macintosh|mac os x)') AND NOT REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(iphone|ipad)') THEN 'MACOS_DESKTOP'
+            WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(linux|x11)') AND NOT REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'android') THEN 'LINUX_DESKTOP'
+            ELSE 'OTHER'
+          END,
+          "No Onboarding Event"
+        ) AS device_category
+        FROM `popshoplive-26f81.dbt_popshop.dim_private_profiles`
       ),
 
       -- Trial-level data with acquisition fields
@@ -105,13 +187,12 @@ view: prod_monthly_new_trials_started {
       prof.username AS sign_up_user_username,
       pprof.email AS sign_up_user_email,
 
-      -- acquisition fields
-      COALESCE(NULLIF(oe.context_campaign_campaign, ''), 'generic') AS marketing_campaign,
-      COALESCE(NULLIF(oe.utm_regintent, ''), NULLIF(mc.utm_regintent, ''), 'generic') AS utm_regintent,
-      COALESCE(NULLIF(oe.business_type, ''), 'generic') AS business_type,
+      COALESCE(oe.marketing_campaign, mc.utm_campaign) AS marketing_campaign,
+      COALESCE(oe.utm_regintent, mc.utm_regintent) AS utm_regintent,
+      COALESCE(oe.business_type, JSON_VALUE(prof.profile, '$.businessType')) AS business_type,
 
       CASE
-      WHEN COALESCE(oe.context_campaign_campaign, mc.utm_campaign) IS NOT NULL
+      WHEN COALESCE(oe.marketing_campaign, mc.utm_campaign) IS NOT NULL
       THEN 'marketing_campaign'
       WHEN mc.utm_source IS NOT NULL
       THEN 'marketing_campaign'
@@ -129,15 +210,8 @@ view: prod_monthly_new_trials_started {
       LEFT JOIN marketing_capture mc
       ON mc.user_id = base.user_id
 
-      LEFT JOIN (
-      SELECT *
-      FROM (
-      SELECT *,
-      ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY timestamp DESC) AS rn
-      FROM `popshoplive-26f81.popstore.popstore_onboarding_screen_action`
-      )
-      WHERE rn = 1
-      ) oe ON oe.user_id = base.user_id
+      LEFT JOIN onboarding_events_dedup oe
+      ON oe.user_id = base.user_id
 
       WHERE
       (pprof.email IS NULL OR (
@@ -145,6 +219,7 @@ view: prod_monthly_new_trials_started {
       AND LOWER(pprof.email) NOT LIKE '%@example.com'
       AND LOWER(pprof.email) NOT LIKE '%@popshoplive.com'
       AND LOWER(pprof.email) NOT LIKE '%@commentsold.com'
+      AND LOWER(pprof.email) NOT LIKE '%@pop.store'
       ))
       ),
 

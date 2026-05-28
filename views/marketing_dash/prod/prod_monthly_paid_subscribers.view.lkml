@@ -19,7 +19,7 @@ view: prod_monthly_paid_subscribers {
           AND t1.status = 'active'
           AND p.apps_pop_store = TRUE
           AND p.user_type IN ('seller', 'verifiedSeller')
-          AND (pprof.email IS NULL OR NOT REGEXP_CONTAINS(LOWER(pprof.email), r'@(test\.com|example\.com|popshoplive\.com|commentsold\.com)$'))
+          AND (pprof.email IS NULL OR NOT REGEXP_CONTAINS(LOWER(pprof.email), r'@(test\.com|example\.com|popshoplive\.com|commentsold\.com|pop\.store)$'))
       ),
 
       -- Extrapolate yearly plans across months
@@ -63,7 +63,7 @@ view: prod_monthly_paid_subscribers {
           AND p.user_type IN ('seller', 'verifiedSeller')
           AND (pprof.email IS NULL
                OR NOT REGEXP_CONTAINS(LOWER(pprof.email),
-                    r'@(test\.com|example\.com|popshoplive\.com|commentsold\.com)$'))
+                    r'@(test\.com|example\.com|popshoplive\.com|commentsold\.com|pop\.store)$'))
       ),
 
       -- Combine monthly and yearly

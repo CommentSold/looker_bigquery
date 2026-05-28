@@ -89,12 +89,37 @@ view: prod_trial_report {
       ),
 
       marketing_capture AS (
-      SELECT
-      user_id,
-      JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_campaign') AS utm_campaign,
-      JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_source') AS utm_source,
-      JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_regintent') AS utm_regintent
-      FROM `popshoplive-26f81.dbt_popshop.dim_private_profiles`
+        SELECT
+        user_id,
+        JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_campaign') AS utm_campaign,
+        JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_source') AS utm_source,
+        JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_regintent') AS utm_regintent,
+        JSON_VALUE(private_profile, '$.onboardingMarketingCapture.url') AS url,
+        JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent') AS user_agent,
+        JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_onboarding_path') AS onboarding_path,
+        JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_planlevel') AS plan_level,
+        JSON_VALUE(private_profile, '$.email') AS profile_email,
+        JSON_VALUE(private_profile, '$.sellerShippingAddress.firstName') AS first_name,
+        JSON_VALUE(private_profile, '$.sellerShippingAddress.lastName')  AS last_name,
+        COALESCE(
+          CASE
+            WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(bot|crawler|spider|crawl|slurp|googlebot|bingpreview|facebookexternalhit|twitterbot|linkedinbot|discordbot|telegrambot|google-read-aloud)') THEN 'BOT'
+            WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'instagram') THEN 'WEBVIEW_INSTAGRAM'
+            WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(fban|fbav|facebook)') THEN 'WEBVIEW_FACEBOOK'
+            WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'tiktok') THEN 'WEBVIEW_TIKTOK'
+            WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'snapchat') THEN 'WEBVIEW_SNAPCHAT'
+            WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(linkedin|linkedinapp)') THEN 'WEBVIEW_LINKEDIN'
+            WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(wv|webview|meta-iab|metaiab|iabmv/1|whatsapp|line|gsa/|googleapp/|youtube|reddit)') THEN 'WEBVIEW_OTHER'
+            WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(iphone|ipad|ipod|cpu iphone os|cpu os)') THEN 'IOS'
+            WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'android') THEN 'ANDROID'
+            WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(windows nt|win64|wow64)') THEN 'WINDOWS_DESKTOP'
+            WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(macintosh|mac os x)') AND NOT REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(iphone|ipad)') THEN 'MACOS_DESKTOP'
+            WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(linux|x11)') AND NOT REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'android') THEN 'LINUX_DESKTOP'
+            ELSE 'OTHER'
+          END,
+          "No Onboarding Event"
+        ) AS device_category
+        FROM `popshoplive-26f81.dbt_popshop.dim_private_profiles`
       ),
 
       -- ✅ Deduplicate ai_pdf_generations to most recent record per user_id
@@ -113,16 +138,16 @@ view: prod_trial_report {
       prof.username AS sign_up_user_username,
       pprof.email AS sign_up_user_email,
       -- ✅ Profile JSON fields (from dim_private_profiles.private_profile)
-      JSON_VALUE(pprof.private_profile, '$.email') AS profile_email,
-      JSON_VALUE(pprof.private_profile, '$.sellerShippingAddress.firstName') AS first_name,
-      JSON_VALUE(pprof.private_profile, '$.sellerShippingAddress.lastName')  AS last_name,
+      mc.profile_email,
+      mc.first_name,
+      mc.last_name,
       COALESCE(oe.marketing_campaign, mc.utm_campaign) AS marketing_campaign,
       COALESCE(oe.utm_regintent, mc.utm_regintent) AS utm_regintent,
-      oe.business_type,
-      oe.onboarding_path,
-      oe.plan_level,
-      oe.device_category,
-      oe.user_agent,
+      COALESCE(oe.business_type, JSON_VALUE(prof.profile, '$.businessType')) AS business_type,
+      COALESCE(oe.onboarding_path, mc.onboarding_path) AS onboarding_path,
+      COALESCE(oe.plan_level, mc.plan_level) AS plan_level,
+      COALESCE(oe.device_category, mc.device_category) AS device_category,
+      COALESCE(oe.user_agent, mc.user_agent) AS user_agent,
 
       CASE
       WHEN DATETIME(base.effective_trial_end) <= CURRENT_DATETIME()

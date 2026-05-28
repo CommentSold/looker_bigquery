@@ -21,7 +21,7 @@ view: prod_signup_conversion_funnel {
           AND p.user_type IN ('seller', 'verifiedSeller')
           AND (pprof.email IS NULL
                OR NOT REGEXP_CONTAINS(LOWER(pprof.email),
-                    r'@(test\.com|example\.com|popshoplive\.com|commentsold\.com)$'))
+                    r'@(test\.com|example\.com|popshoplive\.com|commentsold\.com|pop\.store)$'))
         GROUP BY p.user_id, p.username, p.url_code
       ),
 

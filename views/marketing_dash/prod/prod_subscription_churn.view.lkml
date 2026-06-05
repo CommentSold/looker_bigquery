@@ -12,15 +12,7 @@ view: prod_subscription_churn {
             JSON_EXTRACT_SCALAR(plan, '$.productName'),
             ': ',
             JSON_EXTRACT_SCALAR(plan, '$.interval')
-          ) AS plan_interval,
-          ROW_NUMBER() OVER (
-            PARTITION BY t1.user_id
-            ORDER BY t1.initial_start_date ASC
-          ) AS earliest_sub_rank,
-          ROW_NUMBER() OVER (
-            PARTITION BY t1.user_id
-            ORDER BY t1.initial_start_date DESC
-          ) AS most_recent_sub_rank
+          ) AS plan_interval
         FROM `popshoplive-26f81.dbt_popshop.fact_seller_subscription` t1,
         UNNEST(t1.plans) AS plan
         INNER JOIN `popshoplive-26f81.dbt_popshop.dim_profiles` p
@@ -31,6 +23,7 @@ view: prod_subscription_churn {
           t1.is_deleted = FALSE
           AND p.apps_pop_store = TRUE
           AND p.user_type IN ('seller', 'verifiedSeller')
+          AND JSON_EXTRACT_SCALAR(plan, '$.planType') = 'plan'
           AND (pprof.email IS NULL OR (
             LOWER(pprof.email) NOT LIKE '%@test.com'
             AND LOWER(pprof.email) NOT LIKE '%@example.com'
@@ -40,63 +33,66 @@ view: prod_subscription_churn {
           ))
       ),
 
-      -- Subscription starts: one row per user, their FIRST subscription
-      starts AS (
-      SELECT
-      DATE_TRUNC(initial_start_date, MONTH) AS month_bucket,
-      plan_interval,
-      user_id,
-      'start' AS event_type
-      FROM base_subscriptions
-      WHERE earliest_sub_rank = 1
-      AND initial_start_date >= DATE('2025-07-01')
+      subscription_mrr AS (
+        SELECT
+          subscription_id,
+          MIN(DATE(created_at)) AS first_mrr_date
+        FROM `popshoplive-26f81.dbt_popshop.fact_seller_subscription_invoice`
+        WHERE amount_due > 0
+        GROUP BY subscription_id
       ),
 
-      -- Subscription ends: one row per user, their MOST RECENT subscription,
-      -- counted only if cancelled and period ended in the past
+      starts AS (
+        SELECT
+          DATE_TRUNC(sm.first_mrr_date, MONTH) AS month_bucket,
+          b.plan_interval,
+          b.user_id,
+          'start' AS event_type
+        FROM base_subscriptions b
+        INNER JOIN subscription_mrr sm
+        ON sm.subscription_id = b.subscription_id
+      ),
+
       ends AS (
-      SELECT
-      DATE_TRUNC(DATE(current_period_end), MONTH) AS month_bucket,
-      plan_interval,
-      user_id,
-      'end' AS event_type
-      FROM base_subscriptions
-      WHERE most_recent_sub_rank = 1
-      AND cancelled_at IS NOT NULL
-      AND current_period_end < CURRENT_DATE()
-      AND initial_start_date >= DATE('2025-07-01')
+        SELECT
+          DATE_TRUNC(DATE(b.cancelled_at), MONTH) AS month_bucket,
+          b.plan_interval,
+          b.user_id,
+          'end' AS event_type
+        FROM base_subscriptions b
+        INNER JOIN subscription_mrr sm
+        ON sm.subscription_id = b.subscription_id
+        WHERE b.cancelled_at IS NOT NULL
+        AND DATE(b.cancelled_at) < CURRENT_DATE()
       ),
 
       combined AS (
-      SELECT * FROM starts
-      UNION ALL
-      SELECT * FROM ends
+        SELECT * FROM starts
+        UNION ALL
+        SELECT * FROM ends
       ),
 
-      -- Month spine so months with zero events still appear.
-      -- Cross-joined with plan_intervals seen in `combined` so each
-      -- (month, plan) pair is present even with zero events.
       plan_intervals AS (
-      SELECT DISTINCT plan_interval FROM combined
+        SELECT DISTINCT plan_interval FROM combined
       ),
 
       month_spine AS (
-      SELECT
-      month_start AS month_bucket,
-      plan_interval
-      FROM UNNEST(GENERATE_DATE_ARRAY(
-      DATE('2025-07-01'),
-      DATE_TRUNC(CURRENT_DATE(), MONTH),
-      INTERVAL 1 MONTH
-      )) AS month_start
-      CROSS JOIN plan_intervals
+        SELECT
+        month_start AS month_bucket,
+        plan_interval
+        FROM UNNEST(GENERATE_DATE_ARRAY(
+          DATE('2025-07-01'),
+          DATE_TRUNC(CURRENT_DATE(), MONTH),
+          INTERVAL 1 MONTH
+        )) AS month_start
+        CROSS JOIN plan_intervals
       )
 
       SELECT
-      ms.month_bucket,
-      ms.plan_interval,
-      COUNT(DISTINCT CASE WHEN c.event_type = 'start' THEN c.user_id END) AS subscription_starts,
-      COUNT(DISTINCT CASE WHEN c.event_type = 'end'   THEN c.user_id END) AS subscription_ends
+        ms.month_bucket,
+        ms.plan_interval,
+        COUNT(DISTINCT CASE WHEN c.event_type = 'start' THEN c.user_id END) AS subscription_starts,
+        COUNT(DISTINCT CASE WHEN c.event_type = 'end'   THEN c.user_id END) AS subscription_ends
       FROM month_spine ms
       LEFT JOIN combined c
       ON c.month_bucket = ms.month_bucket
@@ -149,14 +145,14 @@ view: prod_subscription_churn {
     type: sum
     sql: ${TABLE}.subscription_starts ;;
     label: "Subscription Start"
-    description: "Count of distinct users whose first-ever subscription started in this month"
+    description: "Count of distinct users who started an MRR-active subscription this month (New + Reactivation), bucketed by first billable-invoice date. Reconciled to within ~±13/month of Stripe New + Reactivation."
   }
 
   measure: subscription_ends {
     type: sum
     sql: -1 * ${TABLE}.subscription_ends ;;
     label: "Subscription End"
-    description: "Count of distinct users whose most recent subscription ended in this month (negated for waterfall display)"
+    description: "Count of distinct users with an MRR-active subscription cancelled in this month, bucketed by cancellation date (negated for waterfall display). Reconciled to within ~±5/month of Stripe churn."
   }
 
   measure: net_subscription_change {

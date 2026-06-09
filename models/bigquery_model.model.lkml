@@ -137,6 +137,10 @@ explore: prod_subscription_churn {
   label: "Subscription Churn Prod"
   group_label: "Subscriptions"
 }
+explore: prod_subscription_cohort_retention {
+  label: "Subscription Cohort Retention Prod"
+  group_label: "Subscriptions"
+}
 
 # Marketing Dash -> QA #
 

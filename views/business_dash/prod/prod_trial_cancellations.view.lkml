@@ -140,7 +140,19 @@ view: prod_trial_cancellations {
       ELSE 'Started'
       END AS trial_status,
 
-      fs.status AS subscription_status,
+      -- Inferred subscription status.
+      -- Upstream stopped emitting status='unpaid' on 2026-05-10. Unpaid trial
+      -- cancellations now arrive as status='canceled' with a NULL
+      -- cancellation_applied_at, while genuine member-initiated cancellations
+      -- carry a non-NULL cancellation_applied_at. Legacy status='unpaid' rows
+      -- (pre 2026-05-10) are still mapped to 'unpaid'.
+      CASE
+      WHEN fs.status = 'canceled' AND fs.cancellation_applied_at IS NOT NULL
+      THEN 'canceled'
+      WHEN (fs.status = 'canceled' AND fs.cancellation_applied_at IS NULL)
+      OR fs.status = 'unpaid'
+      THEN 'unpaid'
+      END AS subscription_status,
 
       CASE
       WHEN COALESCE(oe.marketing_campaign, mc.utm_campaign) IS NOT NULL
@@ -170,30 +182,38 @@ view: prod_trial_cancellations {
       fs.trial_end IS NOT NULL
       AND fs.status IN ('canceled', 'unpaid')
       AND (
-        -- Branch 1: cancelled during or before trial
-        fs.cancelled_at <= fs.trial_end
-        -- Branch 2: subscription period never advanced past trial (Stripe didn't bill)
-        OR fs.current_period_end = fs.trial_end
-        -- Branch 3: status went unpaid without an explicit cancel
-        OR (fs.status = 'unpaid' AND fs.cancelled_at IS NULL AND fs.trial_end <= CURRENT_TIMESTAMP())
-        -- Branch 4: NEW. Catches the ~10 edge-case subs where Stripe advanced
-        -- current_period_end after trial, billed once, all retries failed, and
-        -- cancelled_at landed in the post-trial billing period. We're confident
-        -- these are trial cancellations because of the NOT EXISTS guard below.
-        OR (fs.cancelled_at IS NOT NULL AND fs.cancelled_at > fs.trial_end)
+      -- Branch 1: cancelled during or before trial
+      fs.cancelled_at <= fs.trial_end
+      -- Branch 2: subscription period never advanced past trial (Stripe didn't bill)
+      OR fs.current_period_end = fs.trial_end
+      -- Branch 3: status went unpaid without an explicit cancel.
+      -- Post 2026-05-10 the upstream no longer emits status='unpaid', so an
+      -- unpaid trial cancellation now surfaces as status='canceled' with a
+      -- NULL cancellation_applied_at. Match both the legacy and inferred forms.
+      OR (
+      (fs.status = 'unpaid'
+      OR (fs.status = 'canceled' AND fs.cancellation_applied_at IS NULL))
+      AND fs.cancelled_at IS NULL
+      AND fs.trial_end <= CURRENT_TIMESTAMP()
+      )
+      -- Branch 4: NEW. Catches the ~10 edge-case subs where Stripe advanced
+      -- current_period_end after trial, billed once, all retries failed, and
+      -- cancelled_at landed in the post-trial billing period. We're confident
+      -- these are trial cancellations because of the NOT EXISTS guard below.
+      OR (fs.cancelled_at IS NOT NULL AND fs.cancelled_at > fs.trial_end)
       )
       AND NOT EXISTS (
-        -- Excludes the 7 paid-then-failed subs currently caught by Branch 3.
-        -- Anyone with a successful post-trial payment belongs in
-        -- prod_paid_subscription_cancellations, not here.
-        SELECT 1
-        FROM `dbt_popshop.fact_seller_subscription_invoice` inv
-        WHERE inv.subscription_id = fs.subscription_id
-          AND inv.is_deleted = FALSE
-          AND inv.status = 'paid'
-          AND inv.amount_due > 0
-          AND inv.amount_paid > 0
-          AND inv.updated_at >= fs.trial_end
+      -- Excludes the paid-then-failed subs currently caught by Branch 3.
+      -- Anyone with a successful post-trial payment belongs in
+      -- prod_paid_subscription_cancellations, not here.
+      SELECT 1
+      FROM `dbt_popshop.fact_seller_subscription_invoice` inv
+      WHERE inv.subscription_id = fs.subscription_id
+      AND inv.is_deleted = FALSE
+      AND inv.status = 'paid'
+      AND inv.amount_due > 0
+      AND inv.amount_paid > 0
+      AND inv.updated_at >= fs.trial_end
       )
       AND JSON_EXTRACT_SCALAR(plan, '$.planType') = 'plan'
       AND (pprof.email IS NULL OR (
@@ -247,7 +267,7 @@ view: prod_trial_cancellations {
   dimension: subscription_status {
     type: string
     sql: ${TABLE}.subscription_status ;;
-    description: "Subscription status: canceled or unpaid"
+    description: "Inferred status: 'canceled' (member-initiated, status='canceled' with non-NULL cancellation_applied_at) or 'unpaid' (status='unpaid' legacy rows, or status='canceled' with NULL cancellation_applied_at after upstream stopped emitting 'unpaid' on 2026-05-10)."
   }
 
   dimension: user_id {
@@ -409,6 +429,24 @@ view: prod_trial_cancellations {
     filters: [cancellation_timing: "later"]
     label: "Later Cancellations"
     description: "Cancellations where trial start date != cancellation date"
+    drill_fields: [drilldown_details*]
+  }
+
+  measure: unpaid_cancellations {
+    type: count_distinct
+    sql: ${TABLE}.subscription_id ;;
+    filters: [subscription_status: "unpaid"]
+    label: "Unpaid Cancellations"
+    description: "Inferred unpaid trial cancellations: status='unpaid' (legacy) or status='canceled' with NULL cancellation_applied_at."
+    drill_fields: [drilldown_details*]
+  }
+
+  measure: member_cancellations {
+    type: count_distinct
+    sql: ${TABLE}.subscription_id ;;
+    filters: [subscription_status: "canceled"]
+    label: "Member Cancellations"
+    description: "Member-initiated trial cancellations: status='canceled' with a non-NULL cancellation_applied_at."
     drill_fields: [drilldown_details*]
   }
 

@@ -253,7 +253,7 @@ view: prod_paid_subscription_cancellations {
       )) AS subscription_cancellation_date,
 
       CASE
-      WHEN ptc.status = 'unpaid' THEN 'payment_failed'
+      WHEN (ptc.status = 'canceled' AND ptc.cancellation_applied_at IS NULL) OR ptc.status = 'unpaid' THEN 'payment_failed'
       WHEN ptc.status = 'past_due' THEN 'payment_retrying'
       WHEN ptc.status = 'canceled' THEN 'cancelled'
       WHEN ptc.status = 'incomplete_expired' THEN 'payment_failed'

@@ -51,6 +51,10 @@ explore: prod_ai_echo_me {
   label: "AI Echo Me Prod"
   group_label: "AI Echo Me"
 }
+explore: prod_connection_link_email_activity {
+  label: "Connection Link Email Activity Prod"
+  group_label: "Email Activity"
+}
 
 # Business Dash -> QA #
 
@@ -105,6 +109,10 @@ explore: qa_ai_echo_me {
 explore: qa_acquisition_funnel_summary {
   label: "Acquisition Funnel Summary"
   group_label: "Onboarding"
+}
+explore: qa_connection_link_email_activity {
+  label: "Connection Link Email Activity QA"
+  group_label: "Email Activity"
 }
 
 # Marketing Dash -> PROD #

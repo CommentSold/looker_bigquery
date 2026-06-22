@@ -141,12 +141,17 @@ view: prod_trial_cancellations {
       END AS trial_status,
 
       -- Inferred subscription status.
-      -- Upstream stopped emitting status='unpaid' on 2026-05-10. Unpaid trial
-      -- cancellations now arrive as status='canceled' with a NULL
-      -- cancellation_applied_at, while genuine member-initiated cancellations
-      -- carry a non-NULL cancellation_applied_at. Legacy status='unpaid' rows
-      -- (pre 2026-05-10) are still mapped to 'unpaid'.
+      -- 'payment retrying' : status='past_due' — trial ended, the post-trial
+      --   charge failed and Stripe is still retrying (dunning). Not cancelled.
+      -- 'unpaid'           : status='unpaid' (legacy, pre 2026-05-10) OR
+      --   status='canceled' with NULL cancellation_applied_at. Upstream stopped
+      --   emitting 'unpaid' on 2026-05-10, so those now arrive as 'canceled'
+      --   with a NULL cancellation_applied_at.
+      -- 'canceled'         : status='canceled' with a non-NULL
+      --   cancellation_applied_at — a genuine member-initiated cancellation.
       CASE
+      WHEN fs.status = 'past_due'
+      THEN 'payment retrying'
       WHEN fs.status = 'canceled' AND fs.cancellation_applied_at IS NOT NULL
       THEN 'canceled'
       WHEN (fs.status = 'canceled' AND fs.cancellation_applied_at IS NULL)
@@ -180,7 +185,7 @@ view: prod_trial_cancellations {
 
       WHERE
       fs.trial_end IS NOT NULL
-      AND fs.status IN ('canceled', 'unpaid')
+      AND fs.status IN ('canceled', 'unpaid', 'past_due')
       AND (
       -- Branch 1: cancelled during or before trial
       fs.cancelled_at <= fs.trial_end
@@ -201,6 +206,11 @@ view: prod_trial_cancellations {
       -- cancelled_at landed in the post-trial billing period. We're confident
       -- these are trial cancellations because of the NOT EXISTS guard below.
       OR (fs.cancelled_at IS NOT NULL AND fs.cancelled_at > fs.trial_end)
+      -- Branch 5: NEW. Trial ended, the first post-trial charge failed and
+      -- Stripe is still retrying — status='past_due', not cancelled yet.
+      -- Surfaced as 'payment retrying'. The NOT EXISTS guard below keeps out
+      -- anyone who already had a successful post-trial payment.
+      OR (fs.status = 'past_due' AND fs.trial_end <= CURRENT_TIMESTAMP())
       )
       AND NOT EXISTS (
       -- Excludes the paid-then-failed subs currently caught by Branch 3.
@@ -267,7 +277,7 @@ view: prod_trial_cancellations {
   dimension: subscription_status {
     type: string
     sql: ${TABLE}.subscription_status ;;
-    description: "Inferred status: 'canceled' (member-initiated, status='canceled' with non-NULL cancellation_applied_at) or 'unpaid' (status='unpaid' legacy rows, or status='canceled' with NULL cancellation_applied_at after upstream stopped emitting 'unpaid' on 2026-05-10)."
+    description: "Inferred status used as a pivot. 'canceled' = member-initiated (status='canceled' with non-NULL cancellation_applied_at); 'unpaid' = status='unpaid' legacy rows or status='canceled' with NULL cancellation_applied_at (upstream stopped emitting 'unpaid' on 2026-05-10); 'payment retrying' = status='past_due', trial ended with the post-trial charge still in Stripe retry/dunning (not cancelled)."
   }
 
   dimension: user_id {
@@ -447,6 +457,15 @@ view: prod_trial_cancellations {
     filters: [subscription_status: "canceled"]
     label: "Member Cancellations"
     description: "Member-initiated trial cancellations: status='canceled' with a non-NULL cancellation_applied_at."
+    drill_fields: [drilldown_details*]
+  }
+
+  measure: payment_retrying {
+    type: count_distinct
+    sql: ${TABLE}.subscription_id ;;
+    filters: [subscription_status: "payment retrying"]
+    label: "Payment Retrying"
+    description: "Trials where the post-trial charge failed and Stripe is still retrying (status='past_due'). Not yet cancelled."
     drill_fields: [drilldown_details*]
   }
 

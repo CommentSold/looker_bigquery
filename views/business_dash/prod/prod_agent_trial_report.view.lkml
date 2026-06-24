@@ -38,14 +38,14 @@ view: prod_agent_trial_report {
       `timestamp`,
       user_id,
       CASE
-        WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(bot|crawler|spider|crawl|slurp|googlebot|bingpreview|facebookexternalhit|twitterbot|linkedinbot|discordbot|telegrambot|google-read-aloud)') THEN 'BOT'
-        WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(wv|webview|meta-iab|metaiab|facebook|fban|fbav|instagram|iabmv/1|whatsapp|line|linkedinapp|snapchat|gsa/|googleapp/|youtube|tiktok|reddit)') THEN 'WEBVIEW'
-        WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(iphone|ipad|ipod|cpu iphone os|cpu os)') THEN 'IOS'
-        WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'android') THEN 'ANDROID'
-        WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(windows nt|win64|wow64)') THEN 'WINDOWS_DESKTOP'
-        WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(macintosh|mac os x)') AND NOT REGEXP_CONTAINS(LOWER(context_user_agent), r'(iphone|ipad)') THEN 'MACOS_DESKTOP'
-        WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(linux|x11)') AND NOT REGEXP_CONTAINS(LOWER(context_user_agent), r'android') THEN 'LINUX_DESKTOP'
-        ELSE 'OTHER'
+      WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(bot|crawler|spider|crawl|slurp|googlebot|bingpreview|facebookexternalhit|twitterbot|linkedinbot|discordbot|telegrambot|google-read-aloud)') THEN 'BOT'
+      WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(wv|webview|meta-iab|metaiab|facebook|fban|fbav|instagram|iabmv/1|whatsapp|line|linkedinapp|snapchat|gsa/|googleapp/|youtube|tiktok|reddit)') THEN 'WEBVIEW'
+      WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(iphone|ipad|ipod|cpu iphone os|cpu os)') THEN 'IOS'
+      WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'android') THEN 'ANDROID'
+      WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(windows nt|win64|wow64)') THEN 'WINDOWS_DESKTOP'
+      WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(macintosh|mac os x)') AND NOT REGEXP_CONTAINS(LOWER(context_user_agent), r'(iphone|ipad)') THEN 'MACOS_DESKTOP'
+      WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(linux|x11)') AND NOT REGEXP_CONTAINS(LOWER(context_user_agent), r'android') THEN 'LINUX_DESKTOP'
+      ELSE 'OTHER'
       END AS device_category
       FROM `popshoplive-26f81.popstore.popstore_onboarding_screen_action`
       WHERE (scene = 'onboarding' OR scene IS NULL)
@@ -78,61 +78,83 @@ view: prod_agent_trial_report {
       ),
 
       marketing_capture AS (
-        SELECT
-        user_id,
-        JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_campaign') AS utm_campaign,
-        JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_source') AS utm_source,
-        JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_regintent') AS utm_regintent,
-        JSON_VALUE(private_profile, '$.onboardingMarketingCapture.url') AS url,
-        JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent') AS user_agent,
-        JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_onboarding_path') AS onboarding_path,
-        JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_planlevel') AS plan_level,
-        JSON_VALUE(private_profile, '$.email') AS profile_email,
-        JSON_VALUE(private_profile, '$.sellerShippingAddress.firstName') AS first_name,
-        JSON_VALUE(private_profile, '$.sellerShippingAddress.lastName')  AS last_name,
-        COALESCE(
-          CASE
-            WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(bot|crawler|spider|crawl|slurp|googlebot|bingpreview|facebookexternalhit|twitterbot|linkedinbot|discordbot|telegrambot|google-read-aloud)') THEN 'BOT'
-            WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'instagram') THEN 'WEBVIEW_INSTAGRAM'
-            WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(fban|fbav|facebook)') THEN 'WEBVIEW_FACEBOOK'
-            WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'tiktok') THEN 'WEBVIEW_TIKTOK'
-            WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'snapchat') THEN 'WEBVIEW_SNAPCHAT'
-            WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(linkedin|linkedinapp)') THEN 'WEBVIEW_LINKEDIN'
-            WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(wv|webview|meta-iab|metaiab|iabmv/1|whatsapp|line|gsa/|googleapp/|youtube|reddit)') THEN 'WEBVIEW_OTHER'
-            WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(iphone|ipad|ipod|cpu iphone os|cpu os)') THEN 'IOS'
-            WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'android') THEN 'ANDROID'
-            WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(windows nt|win64|wow64)') THEN 'WINDOWS_DESKTOP'
-            WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(macintosh|mac os x)') AND NOT REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(iphone|ipad)') THEN 'MACOS_DESKTOP'
-            WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(linux|x11)') AND NOT REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'android') THEN 'LINUX_DESKTOP'
-            ELSE 'OTHER'
-          END,
-          "No Onboarding Event"
-        ) AS device_category
-        FROM `popshoplive-26f81.dbt_popshop.dim_private_profiles`
+      SELECT
+      user_id,
+      JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_campaign') AS utm_campaign,
+      JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_source') AS utm_source,
+      JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_regintent') AS utm_regintent,
+      JSON_VALUE(private_profile, '$.onboardingMarketingCapture.url') AS url,
+      JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent') AS user_agent,
+      JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_onboarding_path') AS onboarding_path,
+      JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_planlevel') AS plan_level,
+      JSON_VALUE(private_profile, '$.email') AS profile_email,
+      JSON_VALUE(private_profile, '$.sellerShippingAddress.firstName') AS first_name,
+      JSON_VALUE(private_profile, '$.sellerShippingAddress.lastName')  AS last_name,
+      COALESCE(
+      CASE
+      WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(bot|crawler|spider|crawl|slurp|googlebot|bingpreview|facebookexternalhit|twitterbot|linkedinbot|discordbot|telegrambot|google-read-aloud)') THEN 'BOT'
+      WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'instagram') THEN 'WEBVIEW_INSTAGRAM'
+      WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(fban|fbav|facebook)') THEN 'WEBVIEW_FACEBOOK'
+      WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'tiktok') THEN 'WEBVIEW_TIKTOK'
+      WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'snapchat') THEN 'WEBVIEW_SNAPCHAT'
+      WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(linkedin|linkedinapp)') THEN 'WEBVIEW_LINKEDIN'
+      WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(wv|webview|meta-iab|metaiab|iabmv/1|whatsapp|line|gsa/|googleapp/|youtube|reddit)') THEN 'WEBVIEW_OTHER'
+      WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(iphone|ipad|ipod|cpu iphone os|cpu os)') THEN 'IOS'
+      WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'android') THEN 'ANDROID'
+      WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(windows nt|win64|wow64)') THEN 'WINDOWS_DESKTOP'
+      WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(macintosh|mac os x)') AND NOT REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(iphone|ipad)') THEN 'MACOS_DESKTOP'
+      WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(linux|x11)') AND NOT REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'android') THEN 'LINUX_DESKTOP'
+      ELSE 'OTHER'
+      END,
+      "No Onboarding Event"
+      ) AS device_category
+      FROM `popshoplive-26f81.dbt_popshop.dim_private_profiles`
       ),
 
       -- Most recent echo_me_agents row per user — surfaces is_meta_setup_valid
       echo_me_latest AS (
       SELECT
-        id,
-        user_id,
-        is_meta_setup_valid,
-        created_at AS meta_setup_last_seen_at
+      id,
+      user_id,
+      is_meta_setup_valid,
+      created_at AS meta_setup_last_seen_at
       FROM `popshoplive-26f81.commentchat.echo_me_agents`
       WHERE id LIKE '%meta_setup_%'
       QUALIFY ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY created_at DESC) = 1
       ),
 
       social_button_clicks AS (
-        SELECT
-          creator_id AS user_id,
-          COUNTIF(action = 'fb_connection_initiated') > 0 AS clicked_fb_connect,
-          COUNTIF(action = 'ig_connection_initiated') > 0 AS clicked_ig_connect,
-          COUNTIF(action IN ('fb_connection_initiated', 'ig_connection_initiated')) > 0 AS clicked_social_connect,
-          MAX(CASE WHEN action IN ('fb_connection_initiated', 'ig_connection_initiated') THEN created_at END) AS social_clicked_last_at
-        FROM `popshoplive-26f81.commentchat.user_activity`
-        WHERE action IN ('fb_connection_initiated', 'ig_connection_initiated')
-        GROUP BY creator_id
+      SELECT
+      creator_id AS user_id,
+      COUNTIF(action = 'fb_connection_initiated') > 0 AS clicked_fb_connect,
+      COUNTIF(action = 'ig_connection_initiated') > 0 AS clicked_ig_connect,
+      COUNTIF(action IN ('fb_connection_initiated', 'ig_connection_initiated')) > 0 AS clicked_social_connect,
+      MAX(CASE WHEN action IN ('fb_connection_initiated', 'ig_connection_initiated') THEN created_at END) AS social_clicked_last_at
+      FROM `popshoplive-26f81.commentchat.user_activity`
+      WHERE action IN ('fb_connection_initiated', 'ig_connection_initiated')
+      GROUP BY creator_id
+      ),
+
+      -- ✅ Connection-link email/SMS engagement, aggregated per creator.
+      -- Same source + join key as social_button_clicks (commentchat.user_activity.creator_id = base.user_id),
+      -- and the same event taxonomy used by the prod_connection_link_email_activity view.
+      -- One row per creator; counts default to 0 via COALESCE in the final SELECT for creators
+      -- with no connection-link events.
+      connection_link_activity AS (
+      SELECT
+      creator_id AS user_id,
+      COUNTIF(action = 'connection_link_email_sent')   AS email_sent_count,
+      COUNTIF(action = 'connection_link_email_opened') AS email_opened_count,
+      COUNTIF(action = 'connection_link_sms_sent')     AS sms_sent_count,
+      COUNTIF(action = 'connection_link_sms_opened')   AS sms_opened_count
+      FROM `popshoplive-26f81.commentchat.user_activity`
+      WHERE action IN (
+      'connection_link_email_sent',
+      'connection_link_email_opened',
+      'connection_link_sms_sent',
+      'connection_link_sms_opened'
+      )
+      GROUP BY creator_id
       )
 
       SELECT
@@ -197,12 +219,18 @@ view: prod_agent_trial_report {
       COALESCE(sbc.clicked_fb_connect, FALSE)     AS clicked_fb_connect,
       COALESCE(sbc.clicked_ig_connect, FALSE)     AS clicked_ig_connect,
       CASE
-        WHEN sbc.clicked_fb_connect AND sbc.clicked_ig_connect THEN 'FB + IG'
-        WHEN sbc.clicked_fb_connect THEN 'FB only'
-        WHEN sbc.clicked_ig_connect THEN 'IG only'
-        ELSE 'None'
+      WHEN sbc.clicked_fb_connect AND sbc.clicked_ig_connect THEN 'FB + IG'
+      WHEN sbc.clicked_fb_connect THEN 'FB only'
+      WHEN sbc.clicked_ig_connect THEN 'IG only'
+      ELSE 'None'
       END AS social_button_clicked_status,
-      sbc.social_clicked_last_at
+      sbc.social_clicked_last_at,
+
+      -- ✅ Connection-link engagement counts (per creator / user_id)
+      COALESCE(cla.email_sent_count, 0)   AS email_sent,
+      COALESCE(cla.email_opened_count, 0) AS email_opened,
+      COALESCE(cla.sms_sent_count, 0)     AS sms_sent,
+      COALESCE(cla.sms_opened_count, 0)   AS sms_opened
 
       FROM base
 
@@ -224,22 +252,25 @@ view: prod_agent_trial_report {
       LEFT JOIN social_button_clicks sbc
       ON sbc.user_id = base.user_id
 
+      LEFT JOIN connection_link_activity cla
+      ON cla.user_id = base.user_id
+
       WHERE
-        -- Restrict to agent-related regintents only
-        COALESCE(oe.utm_regintent, mc.utm_regintent) IN (
-          'brand_deals_agent',
-          'auto_selling_agent',
-          'engagement_agent',
-          'comment_to_dm_agent',
-          'ai_team'
-        )
-        AND (pprof.email IS NULL OR (
-          LOWER(pprof.email) NOT LIKE '%@test.com'
-          AND LOWER(pprof.email) NOT LIKE '%@example.com'
-          AND LOWER(pprof.email) NOT LIKE '%@popshoplive.com'
-          AND LOWER(pprof.email) NOT LIKE '%@commentsold.com'
-          AND LOWER(pprof.email) NOT LIKE '%@pop.store'
-        ))
+      -- Restrict to agent-related regintents only
+      COALESCE(oe.utm_regintent, mc.utm_regintent) IN (
+      'brand_deals_agent',
+      'auto_selling_agent',
+      'engagement_agent',
+      'comment_to_dm_agent',
+      'ai_team'
+      )
+      AND (pprof.email IS NULL OR (
+      LOWER(pprof.email) NOT LIKE '%@test.com'
+      AND LOWER(pprof.email) NOT LIKE '%@example.com'
+      AND LOWER(pprof.email) NOT LIKE '%@popshoplive.com'
+      AND LOWER(pprof.email) NOT LIKE '%@commentsold.com'
+      AND LOWER(pprof.email) NOT LIKE '%@pop.store'
+      ))
       ORDER BY base.initial_start_date DESC
       ;;
   }
@@ -487,6 +518,61 @@ view: prod_agent_trial_report {
     description: "Meta setup status combined with whether the user clicked any social connect option."
   }
 
+  # ——— Connection-link email/SMS engagement (commentchat.user_activity) ———
+
+  dimension: email_sent {
+    type: number
+    sql: ${TABLE}.email_sent ;;
+    label: "Email Sent (count)"
+    description: "Number of connection_link_email_sent events for this user. 0 if none. Use email_sent > 0 to answer 'was an email ever sent?'."
+  }
+
+  dimension: email_opened {
+    type: number
+    sql: ${TABLE}.email_opened ;;
+    label: "Email Opened (count)"
+    description: "Number of connection_link_email_opened events for this user. 0 if none."
+  }
+
+  dimension: sms_sent {
+    type: number
+    sql: ${TABLE}.sms_sent ;;
+    label: "SMS Sent (count)"
+    description: "Number of connection_link_sms_sent events for this user. 0 if none."
+  }
+
+  dimension: sms_opened {
+    type: number
+    sql: ${TABLE}.sms_opened ;;
+    label: "SMS Opened (count)"
+    description: "Number of connection_link_sms_opened events for this user. 0 if none."
+  }
+
+  # ✅ Convenience yes/no flags for the "did it happen at all?" question
+  dimension: has_email_sent {
+    type: yesno
+    sql: ${TABLE}.email_sent > 0 ;;
+    label: "Email Sent?"
+  }
+
+  dimension: has_email_opened {
+    type: yesno
+    sql: ${TABLE}.email_opened > 0 ;;
+    label: "Email Opened?"
+  }
+
+  dimension: has_sms_sent {
+    type: yesno
+    sql: ${TABLE}.sms_sent > 0 ;;
+    label: "SMS Sent?"
+  }
+
+  dimension: has_sms_opened {
+    type: yesno
+    sql: ${TABLE}.sms_opened > 0 ;;
+    label: "SMS Opened?"
+  }
+
   # ——— Measures ———
 
   measure: total_agent_trials {
@@ -551,6 +637,39 @@ view: prod_agent_trial_report {
     value_format_name: decimal_1
   }
 
+  # ✅ Distinct-user counts for connection-link engagement (handy for dashboard tiles)
+  measure: users_with_email_sent {
+    type: count_distinct
+    sql: ${TABLE}.user_id ;;
+    filters: [has_email_sent: "Yes"]
+    label: "Users w/ Email Sent"
+    drill_fields: [agent_drill_details*]
+  }
+
+  measure: users_with_email_opened {
+    type: count_distinct
+    sql: ${TABLE}.user_id ;;
+    filters: [has_email_opened: "Yes"]
+    label: "Users w/ Email Opened"
+    drill_fields: [agent_drill_details*]
+  }
+
+  measure: users_with_sms_sent {
+    type: count_distinct
+    sql: ${TABLE}.user_id ;;
+    filters: [has_sms_sent: "Yes"]
+    label: "Users w/ SMS Sent"
+    drill_fields: [agent_drill_details*]
+  }
+
+  measure: users_with_sms_opened {
+    type: count_distinct
+    sql: ${TABLE}.user_id ;;
+    filters: [has_sms_opened: "Yes"]
+    label: "Users w/ SMS Opened"
+    drill_fields: [agent_drill_details*]
+  }
+
   # ——— Drill set (includes Meta setup flag for ALL users) ———
 
   set: agent_drill_details {
@@ -584,6 +703,10 @@ view: prod_agent_trial_report {
       clicked_fb_connect,
       clicked_ig_connect,
       social_clicked_last_at_date,
+      email_sent,
+      email_opened,
+      sms_sent,
+      sms_opened,
       device_category,
       user_agent
     ]

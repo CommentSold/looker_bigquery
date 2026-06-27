@@ -28,13 +28,16 @@ view: prod_connection_link_email_activity {
           CASE
             WHEN action LIKE '%_sent'   THEN 'Sent'
             WHEN action LIKE '%_opened' THEN 'Opened'
+            WHEN action LIKE '%_failed' THEN 'Failed'
           END AS event_type
         FROM `popshoplive-26f81.commentchat.user_activity`
         WHERE action IN (
             'connection_link_email_sent',
             'connection_link_email_opened',
             'connection_link_sms_sent',
-            'connection_link_sms_opened'
+            'connection_link_sms_opened',
+            'connection_link_email_failed',
+            'connection_link_sms_failed'
           )
           AND {% condition date_range %} occured_at {% endcondition %}
       ),
@@ -47,7 +50,8 @@ view: prod_connection_link_email_activity {
       SELECT
       base.*,
       COUNTIF(event_type = 'Sent')   OVER (PARTITION BY creator_id) AS creator_sent_count,
-      COUNTIF(event_type = 'Opened') OVER (PARTITION BY creator_id) AS creator_opened_count
+      COUNTIF(event_type = 'Opened') OVER (PARTITION BY creator_id) AS creator_opened_count,
+      COUNTIF(event_type = 'Failed') OVER (PARTITION BY creator_id) AS creator_failed_count
       FROM base
       )
 
@@ -57,6 +61,7 @@ view: prod_connection_link_email_activity {
       -- "Opened, No Send Recorded" bucket is expected while capture is
       -- incomplete — we started logging these events recently.
       CASE
+      WHEN creator_failed_count > 0 THEN 'Failed'
       WHEN creator_sent_count > 0 AND creator_opened_count > 0 THEN 'Sent & Opened'
       WHEN creator_sent_count > 0 AND creator_opened_count = 0 THEN 'Sent, Not Opened'
       WHEN creator_sent_count = 0 AND creator_opened_count > 0 THEN 'Opened, No Send Recorded'
@@ -139,11 +144,18 @@ view: prod_connection_link_email_activity {
     description: "Number of 'opened' events (any channel) this creator has in the selected range."
   }
 
+  dimension: creator_failed_count {
+    type: number
+    sql: ${TABLE}.creator_failed_count ;;
+    label: "Creator: Total Failed"
+    description: "Number of 'failed' events (any channel) this creator has in the selected range."
+  }
+
   dimension: creator_engagement_status {
     type: string
     sql: ${TABLE}.creator_engagement_status ;;
     label: "Creator Engagement Status"
-    description: "Sent & Opened / Sent, Not Opened / Opened, No Send Recorded. Computed across both channels."
+    description: "Failed, Sent & Opened / Sent, Not Opened / Opened, No Send Recorded. Computed across both channels."
   }
 
   # ───────────────────────────── Measures ─────────────────────────────
@@ -169,6 +181,13 @@ view: prod_connection_link_email_activity {
     drill_fields: [event_details*]
   }
 
+  measure: total_failed {
+    type: count
+    filters: [event_type: "Failed"]
+    label: "Failed (all channels)"
+    drill_fields: [event_details*]
+  }
+
   # ── Email-only ──
   measure: emails_sent {
     type: count
@@ -184,6 +203,13 @@ view: prod_connection_link_email_activity {
     drill_fields: [event_details*]
   }
 
+  measure: emails_failed {
+    type: count
+    filters: [event_type: "Failed", channel: "Email"]
+    label: "Emails Failed (events)"
+    drill_fields: [event_details*]
+  }
+
   # ── SMS-only ──
   measure: sms_sent {
     type: count
@@ -196,6 +222,13 @@ view: prod_connection_link_email_activity {
     type: count
     filters: [event_type: "Opened", channel: "SMS"]
     label: "SMS Opened (events)"
+    drill_fields: [event_details*]
+  }
+
+  measure: sms_failed {
+    type: count
+    filters: [event_type: "Failed", channel: "SMS"]
+    label: "SMS Failed (events)"
     drill_fields: [event_details*]
   }
 
@@ -220,6 +253,14 @@ view: prod_connection_link_email_activity {
     sql: ${creator_id} ;;
     filters: [event_type: "Opened"]
     label: "Creators Who Opened"
+    drill_fields: [creator_summary*]
+  }
+
+  measure: creators_who_failed {
+    type: count_distinct
+    sql: ${creator_id} ;;
+    filters: [event_type: "Failed"]
+    label: "Creators Who Failed"
     drill_fields: [creator_summary*]
   }
 

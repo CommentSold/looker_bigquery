@@ -372,7 +372,8 @@ view: prod_agent_trial_conversions {
       'auto_selling_agent',
       'engagement_agent',
       'comment_to_dm_agent',
-      'ai_team'
+      'ai_team',
+      'vidcon'
       )
       AND (pprof.email IS NULL OR (
       LOWER(pprof.email) NOT LIKE '%@test.com'

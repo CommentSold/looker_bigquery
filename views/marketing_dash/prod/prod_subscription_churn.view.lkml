@@ -24,13 +24,13 @@ view: prod_subscription_churn {
           AND p.apps_pop_store = TRUE
           AND p.user_type IN ('seller', 'verifiedSeller')
           AND JSON_EXTRACT_SCALAR(plan, '$.planType') = 'plan'
-          AND (pprof.email IS NULL OR (
-            LOWER(pprof.email) NOT LIKE '%@test.com'
-            AND LOWER(pprof.email) NOT LIKE '%@example.com'
-            AND LOWER(pprof.email) NOT LIKE '%@popshoplive.com'
-            AND LOWER(pprof.email) NOT LIKE '%@commentsold.com'
-            AND LOWER(pprof.email) NOT LIKE '%@pop.store'
-          ))
+          --  AND (pprof.email IS NULL OR (
+          --   LOWER(pprof.email) NOT LIKE '%@test.com'
+          --   AND LOWER(pprof.email) NOT LIKE '%@example.com'
+          --   AND LOWER(pprof.email) NOT LIKE '%@popshoplive.com'
+          --   AND LOWER(pprof.email) NOT LIKE '%@commentsold.com'
+          --   AND LOWER(pprof.email) NOT LIKE '%@pop.store'
+          -- ))
       ),
 
       subscription_mrr AS (

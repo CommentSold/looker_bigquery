@@ -275,6 +275,7 @@ view: prod_trial_report {
       AND LOWER(pprof.email) NOT LIKE '%@commentsold.com'
       AND LOWER(pprof.email) NOT LIKE '%@pop.store'
       ))
+      AND COALESCE(oe.utm_regintent, mc.utm_regintent) NOT IN ("vidcon")
 
       ORDER BY base.initial_start_date DESC;;
   }

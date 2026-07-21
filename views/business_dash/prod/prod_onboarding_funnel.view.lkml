@@ -16,24 +16,21 @@ view: prod_onboarding_funnel {
         scene,
         step_name,
         onboarding_session_id,
-        COALESCE(
-          CASE
-            WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(bot|crawler|spider|crawl|slurp|googlebot|bingpreview|facebookexternalhit|twitterbot|linkedinbot|discordbot|telegrambot|google-read-aloud)') THEN 'BOT'
-            WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'instagram') THEN 'WEBVIEW_INSTAGRAM'
-            WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(fban|fbav|facebook)') THEN 'WEBVIEW_FACEBOOK'
-            WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'tiktok') THEN 'WEBVIEW_TIKTOK'
-            WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'snapchat') THEN 'WEBVIEW_SNAPCHAT'
-            WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(linkedin|linkedinapp)') THEN 'WEBVIEW_LINKEDIN'
-            WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(wv|webview|meta-iab|metaiab|iabmv/1|whatsapp|line|gsa/|googleapp/|youtube|reddit)') THEN 'WEBVIEW_OTHER'
-            WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(iphone|ipad|ipod|cpu iphone os|cpu os)') THEN 'IOS'
-            WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'android') THEN 'ANDROID'
-            WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(windows nt|win64|wow64)') THEN 'WINDOWS_DESKTOP'
-            WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(macintosh|mac os x)') AND NOT REGEXP_CONTAINS(LOWER(context_user_agent), r'(iphone|ipad)') THEN 'MACOS_DESKTOP'
-            WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(linux|x11)') AND NOT REGEXP_CONTAINS(LOWER(context_user_agent), r'android') THEN 'LINUX_DESKTOP'
-            ELSE 'OTHER'
-          END,
-          "No Onboarding Event"
-        ) AS device_category
+        CASE
+          WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(bot|crawler|spider|crawl|slurp|googlebot|bingpreview|facebookexternalhit|twitterbot|linkedinbot|discordbot|telegrambot|google-read-aloud)') THEN 'BOT'
+          WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'instagram') THEN 'WEBVIEW_INSTAGRAM'
+          WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(fban|fbav|facebook)') THEN 'WEBVIEW_FACEBOOK'
+          WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'tiktok') THEN 'WEBVIEW_TIKTOK'
+          WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'snapchat') THEN 'WEBVIEW_SNAPCHAT'
+          WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(linkedin|linkedinapp)') THEN 'WEBVIEW_LINKEDIN'
+          WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(wv|webview|meta-iab|metaiab|iabmv/1|whatsapp|line|gsa/|googleapp/|youtube|reddit)') THEN 'WEBVIEW_OTHER'
+          WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(iphone|ipad|ipod|cpu iphone os|cpu os)') THEN 'IOS'
+          WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'android') THEN 'ANDROID'
+          WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(windows nt|win64|wow64)') THEN 'WINDOWS_DESKTOP'
+          WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(macintosh|mac os x)') AND NOT REGEXP_CONTAINS(LOWER(context_user_agent), r'(iphone|ipad)') THEN 'MACOS_DESKTOP'
+          WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(linux|x11)') AND NOT REGEXP_CONTAINS(LOWER(context_user_agent), r'android') THEN 'LINUX_DESKTOP'
+          ELSE 'OTHER'
+        END AS device_category
       FROM `popshoplive-26f81.popstore.popstore_onboarding_screen_action`
       WHERE (scene = 'onboarding' OR scene IS NULL)
         AND (step_name = 'onboarding_complete' OR step_name IS NULL)
@@ -51,24 +48,21 @@ view: prod_onboarding_funnel {
       JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent') AS user_agent,
       JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_onboarding_path') AS onboarding_path,
       JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_planlevel') AS plan_level,
-      COALESCE(
-        CASE
-          WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(bot|crawler|spider|crawl|slurp|googlebot|bingpreview|facebookexternalhit|twitterbot|linkedinbot|discordbot|telegrambot|google-read-aloud)') THEN 'BOT'
-          WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'instagram') THEN 'WEBVIEW_INSTAGRAM'
-          WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(fban|fbav|facebook)') THEN 'WEBVIEW_FACEBOOK'
-          WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'tiktok') THEN 'WEBVIEW_TIKTOK'
-          WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'snapchat') THEN 'WEBVIEW_SNAPCHAT'
-          WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(linkedin|linkedinapp)') THEN 'WEBVIEW_LINKEDIN'
-          WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(wv|webview|meta-iab|metaiab|iabmv/1|whatsapp|line|gsa/|googleapp/|youtube|reddit)') THEN 'WEBVIEW_OTHER'
-          WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(iphone|ipad|ipod|cpu iphone os|cpu os)') THEN 'IOS'
-          WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'android') THEN 'ANDROID'
-          WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(windows nt|win64|wow64)') THEN 'WINDOWS_DESKTOP'
-          WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(macintosh|mac os x)') AND NOT REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(iphone|ipad)') THEN 'MACOS_DESKTOP'
-          WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(linux|x11)') AND NOT REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'android') THEN 'LINUX_DESKTOP'
-          ELSE 'OTHER'
-        END,
-        "No Onboarding Event"
-      ) AS device_category
+      CASE
+        WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(bot|crawler|spider|crawl|slurp|googlebot|bingpreview|facebookexternalhit|twitterbot|linkedinbot|discordbot|telegrambot|google-read-aloud)') THEN 'BOT'
+        WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'instagram') THEN 'WEBVIEW_INSTAGRAM'
+        WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(fban|fbav|facebook)') THEN 'WEBVIEW_FACEBOOK'
+        WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'tiktok') THEN 'WEBVIEW_TIKTOK'
+        WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'snapchat') THEN 'WEBVIEW_SNAPCHAT'
+        WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(linkedin|linkedinapp)') THEN 'WEBVIEW_LINKEDIN'
+        WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(wv|webview|meta-iab|metaiab|iabmv/1|whatsapp|line|gsa/|googleapp/|youtube|reddit)') THEN 'WEBVIEW_OTHER'
+        WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(iphone|ipad|ipod|cpu iphone os|cpu os)') THEN 'IOS'
+        WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'android') THEN 'ANDROID'
+        WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(windows nt|win64|wow64)') THEN 'WINDOWS_DESKTOP'
+        WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(macintosh|mac os x)') AND NOT REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(iphone|ipad)') THEN 'MACOS_DESKTOP'
+        WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(linux|x11)') AND NOT REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'android') THEN 'LINUX_DESKTOP'
+        ELSE 'OTHER'
+      END AS device_category
       FROM `popshoplive-26f81.dbt_popshop.dim_private_profiles`
     )
     SELECT
@@ -79,12 +73,17 @@ view: prod_onboarding_funnel {
       prof.username AS sign_up_user_username,
       pprof.email AS sign_up_user_email,
       COALESCE(oe.marketing_campaign, mc.utm_campaign) AS marketing_campaign,
-      COALESCE(oe.device_category, mc.device_category) AS device_category,
+      COALESCE(oe.device_category, mc.device_category, "No Onboarding Event") AS device_category,
       COALESCE(oe.utm_regintent, mc.utm_regintent) AS utm_regintent,
       COALESCE(oe.business_type, JSON_VALUE(prof.profile, '$.businessType')) AS business_type,
       oe.`timestamp`,
       oe.step_name,
       oe.onboarding_session_id,
+      CASE
+        WHEN oe.step_name = 'onboarding_complete'
+          OR JSON_QUERY(pprof.private_profile, '$.onboardingMarketingCapture') IS NOT NULL
+        THEN TRUE ELSE FALSE
+      END AS is_onboarding_complete,
       CASE
       WHEN COALESCE(oe.marketing_campaign, mc.utm_campaign) IS NOT NULL
       THEN 'marketing_campaign'
@@ -177,9 +176,14 @@ view: prod_onboarding_funnel {
     timeframes: [time, date, week, month, quarter, year]
   }
 
+  dimension: is_onboarding_complete {
+    type: yesno
+    sql: ${TABLE}.is_onboarding_complete ;;
+  }
+
   measure: count_onboarding_complete {
     type: count
-    filters: [step_name: "onboarding_complete"]
+    filters: [is_onboarding_complete: "yes"]
     drill_fields: [onboarding_details*]
   }
 
@@ -198,7 +202,7 @@ view: prod_onboarding_funnel {
   measure: count_distinct_users_completed {
     type: count_distinct
     sql: ${sign_up_user_id} ;;
-    filters: [step_name: "onboarding_complete"]
+    filters: [is_onboarding_complete: "yes"]
     description: "Distinct users who completed onboarding."
     drill_fields: [onboarding_details*]
   }

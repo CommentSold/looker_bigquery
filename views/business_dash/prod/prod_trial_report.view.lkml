@@ -276,6 +276,7 @@ view: prod_trial_report {
       AND LOWER(pprof.email) NOT LIKE '%@pop.store'
       ))
       AND COALESCE(oe.utm_regintent, mc.utm_regintent) NOT IN ("vidcon")
+      AND DATE(base.initial_start_date) NOT BETWEEN '2026-06-25' AND '2026-06-27'
 
       ORDER BY base.initial_start_date DESC;;
   }

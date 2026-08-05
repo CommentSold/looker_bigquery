@@ -107,7 +107,10 @@ view: prod_onboarding_funnel {
         AND LOWER(pprof.email) NOT LIKE '%@commentsold.com'
         AND LOWER(pprof.email) NOT LIKE '%@pop.store'
       ))
-      AND COALESCE(oe.utm_regintent, mc.utm_regintent) NOT IN ("vidcon")
+      AND (
+        COALESCE(oe.utm_regintent, mc.utm_regintent) IS NULL
+        OR COALESCE(oe.utm_regintent, mc.utm_regintent) NOT IN ("vidcon")
+      )
     ORDER BY acquisition_source DESC;;
   }
 

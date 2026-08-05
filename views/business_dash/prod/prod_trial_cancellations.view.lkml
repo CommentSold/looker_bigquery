@@ -233,7 +233,10 @@ view: prod_trial_cancellations {
       AND LOWER(pprof.email) NOT LIKE '%@commentsold.com'
       AND LOWER(pprof.email) NOT LIKE '%@pop.store'
       ))
-      AND COALESCE(oe.utm_regintent, mc.utm_regintent) NOT IN ("vidcon")
+      AND (
+        COALESCE(oe.utm_regintent, mc.utm_regintent) IS NULL
+        OR COALESCE(oe.utm_regintent, mc.utm_regintent) NOT IN ("vidcon")
+      )
       AND DATE(fs.initial_start_date) NOT BETWEEN '2026-06-25' AND '2026-06-27'
       {% if date_range._is_filtered %}
       AND {% condition date_range %} TIMESTAMP(fs.initial_start_date) {% endcondition %}

@@ -1,44 +1,125 @@
 view: prod_subscription_churn {
   derived_table: {
     sql:
-      WITH base_subscriptions AS (
+      WITH
+      extracted_timestamps AS (
         SELECT
-          t1.subscription_id,
-          t1.user_id,
-          DATE(t1.initial_start_date) AS initial_start_date,
-          DATE(t1.current_period_end) AS current_period_end,
-          t1.cancelled_at,
-          CONCAT(
-            JSON_EXTRACT_SCALAR(plan, '$.productName'),
-            ': ',
-            JSON_EXTRACT_SCALAR(plan, '$.interval')
-          ) AS plan_interval
-        FROM `popshoplive-26f81.dbt_popshop.fact_seller_subscription` t1,
-        UNNEST(t1.plans) AS plan
+          subscription_id,
+          TIMESTAMP_SECONDS(
+            SAFE_CAST(
+              ANY_VALUE(JSON_VALUE(subscription, '$.cancelledAt._seconds'))
+              AS INT64
+            )
+          ) AS cancelled_at_utc,
+          MIN(updated_at) AS canceled_at_ts
+        FROM `popshoplive-26f81.dbt_popshop.fact_seller_subscription`
+        WHERE is_deleted = FALSE
+          AND status IN ("unpaid", "canceled")
+        GROUP BY subscription_id
+      ),
+      canceled_status_at AS (
+        SELECT
+          subscription_id,
+          cancelled_at_utc,
+          canceled_at_ts,
+          CASE
+            WHEN cancelled_at_utc IS NULL THEN canceled_at_ts
+            WHEN canceled_at_ts IS NULL THEN cancelled_at_utc
+            ELSE LEAST(cancelled_at_utc, canceled_at_ts)
+          END AS cancelled_at
+        FROM extracted_timestamps
+      ),
+
+      -- Independent witness for the dunning path, used only as a fallback.
+      dunning AS (
+        SELECT
+          subscription_id,
+          MIN(updated_at) AS dunning_end_ts
+        FROM `popshoplive-26f81.dbt_popshop.fact_seller_subscription_invoice`
+        WHERE is_deleted = FALSE
+          AND status IN ('uncollectible', 'void')
+        GROUP BY subscription_id
+      ),
+
+      latest_subscription AS (
+        SELECT * EXCEPT (rn)
+        FROM (
+          SELECT
+            t1.*,
+            CONCAT(
+              JSON_EXTRACT_SCALAR(plan, '$.productName'),
+              ': ',
+              JSON_EXTRACT_SCALAR(plan, '$.interval')
+            ) AS plan_interval,
+            ROW_NUMBER() OVER (
+              PARTITION BY t1.subscription_id
+              ORDER BY t1.updated_at DESC
+            ) AS rn
+          FROM `popshoplive-26f81.dbt_popshop.fact_seller_subscription` t1,
+          UNNEST(t1.plans) AS plan
+          WHERE
+            t1.is_deleted = FALSE
+            AND JSON_EXTRACT_SCALAR(plan, '$.planType') = 'plan'
+        )
+        WHERE rn = 1
+      ),
+
+      base_subscriptions AS (
+        SELECT
+          s.subscription_id,
+          s.user_id,
+          s.status,
+          s.cancelled_at,
+          s.cancel_at_period_end,
+          s.current_period_end,
+          s.plan_interval,
+          c.cancelled_at,
+          d.dunning_end_ts,
+
+          -- ---- Stripe ended_at -------------------------------------
+          CASE
+            WHEN s.status NOT IN ("unpaid", "canceled") THEN NULL   -- not terminated yet
+            WHEN s.cancel_at_period_end IS TRUE THEN DATE(COALESCE(d.dunning_end_ts, s.current_period_end), 'America/New_York')
+            ELSE DATE(
+                   COALESCE(
+                     c.cancelled_at,   -- authoritative: the status flip
+                     d.dunning_end_ts,   -- fallback: invoice went uncollectible
+                     s.cancelled_at      -- last resort
+                   ),
+                   'America/New_York'
+                 )
+          END AS effective_end_date
+          -- ----------------------------------------------------------
+
+        FROM latest_subscription s
         INNER JOIN `popshoplive-26f81.dbt_popshop.dim_profiles` p
-          ON p.user_id = t1.user_id
+          ON p.user_id = s.user_id
         LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_private_profiles` pprof
-          ON pprof.user_id = t1.user_id
-        WHERE
-          t1.is_deleted = FALSE
-          AND p.apps_pop_store = TRUE
+          ON pprof.user_id = s.user_id
+        LEFT JOIN canceled_status_at c
+          ON c.subscription_id = s.subscription_id
+        LEFT JOIN dunning dn
+          ON dn.subscription_id = s.subscription_id
+        LEFT JOIN dunning d
+          ON d.subscription_id = s.subscription_id
+        WHERE p.apps_pop_store = TRUE
           AND p.user_type IN ('seller', 'verifiedSeller')
-          AND JSON_EXTRACT_SCALAR(plan, '$.planType') = 'plan'
-          --  AND (pprof.email IS NULL OR (
-          --   LOWER(pprof.email) NOT LIKE '%@test.com'
-          --   AND LOWER(pprof.email) NOT LIKE '%@example.com'
-          --   AND LOWER(pprof.email) NOT LIKE '%@popshoplive.com'
-          --   AND LOWER(pprof.email) NOT LIKE '%@commentsold.com'
-          --   AND LOWER(pprof.email) NOT LIKE '%@pop.store'
-          -- ))
+          AND EXISTS (
+            SELECT 1
+            FROM UNNEST(s.plans) AS plan
+            WHERE JSON_EXTRACT_SCALAR(plan, '$.planType') = 'plan'
+          )
+          -- AND (pprof.email IS NULL OR NOT REGEXP_CONTAINS(LOWER(pprof.email),
+          --      r'@(test\.com|example\.com|popshoplive\.com|pop\.store|commentsold\.com)$'))
       ),
 
       subscription_mrr AS (
         SELECT
           subscription_id,
-          MIN(DATE(created_at)) AS first_mrr_date
+          MIN(DATE(COALESCE(created, created_at), 'America/New_York')) AS first_mrr_date
         FROM `popshoplive-26f81.dbt_popshop.fact_seller_subscription_invoice`
-        WHERE amount_due > 0
+        WHERE is_deleted = FALSE
+          AND amount_due > 0
         GROUP BY subscription_id
       ),
 
@@ -50,20 +131,20 @@ view: prod_subscription_churn {
           'start' AS event_type
         FROM base_subscriptions b
         INNER JOIN subscription_mrr sm
-        ON sm.subscription_id = b.subscription_id
+          ON sm.subscription_id = b.subscription_id
       ),
 
       ends AS (
         SELECT
-          DATE_TRUNC(DATE(b.cancelled_at), MONTH) AS month_bucket,
+          DATE_TRUNC(b.effective_end_date, MONTH) AS month_bucket,
           b.plan_interval,
           b.user_id,
           'end' AS event_type
         FROM base_subscriptions b
         INNER JOIN subscription_mrr sm
-        ON sm.subscription_id = b.subscription_id
-        WHERE b.cancelled_at IS NOT NULL
-        AND DATE(b.cancelled_at) < CURRENT_DATE()
+          ON sm.subscription_id = b.subscription_id
+        WHERE b.effective_end_date IS NOT NULL
+          AND b.effective_end_date < CURRENT_DATE('America/New_York')
       ),
 
       combined AS (

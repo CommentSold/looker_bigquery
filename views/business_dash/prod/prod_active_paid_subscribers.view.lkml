@@ -3,7 +3,8 @@ view: prod_active_paid_subscribers {
     sql:
       WITH date_spine AS (
         SELECT d AS report_date
-        FROM UNNEST(GENERATE_DATE_ARRAY('2025-01-01', DATE_SUB(CURRENT_DATE(), INTERVAL 7 DAY))) AS d
+        FROM UNNEST (GENERATE_DATE_ARRAY ('2025-01-01', CURRENT_DATE())) AS d
+        -- FROM UNNEST(GENERATE_DATE_ARRAY('2025-01-01', DATE_SUB(CURRENT_DATE(), INTERVAL 7 DAY))) AS d
       ),
 
       -- Get subscription start and end dates using reliable date fields
@@ -15,14 +16,11 @@ view: prod_active_paid_subscribers {
       DATE(created_at) AS start_date,
       -- Use cancellation_applied_at or current_period_end for end date if cancelled/inactive
       CASE
-      WHEN status IN ('canceled', 'cancelled', 'unpaid', 'past_due') THEN
-      COALESCE(
-      DATE(cancellation_applied_at),
-      DATE(current_period_end),
-      DATE(created_at)
-      )
-      WHEN is_deleted = TRUE THEN DATE(created_at)
-      ELSE NULL
+        WHEN status IN ('canceled','cancelled','unpaid') THEN
+          COALESCE(DATE(cancellation_applied_at), DATE(current_period_end), DATE(created_at))
+        WHEN status = 'past_due' THEN NULL          -- keep active until it actually cancels
+        WHEN is_deleted = TRUE THEN DATE(created_at)
+        ELSE NULL
       END AS end_date,
       is_deleted
       FROM `dbt_popshop.fact_seller_subscription`
@@ -37,7 +35,8 @@ view: prod_active_paid_subscribers {
       JOIN subscription_periods sp
       ON ds.report_date >= sp.start_date
       AND (sp.end_date IS NULL OR ds.report_date < sp.end_date)
-      WHERE sp.status = 'active'
+      -- WHERE sp.status = 'active'
+      WHERE sp.status IN ("active", "past_due")
       AND sp.is_deleted = FALSE
       ),
       onboarding_events AS (

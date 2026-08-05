@@ -149,6 +149,11 @@ explore: prod_subscription_cohort_retention {
   label: "Subscription Cohort Retention Prod"
   group_label: "Subscriptions"
 }
+explore: prod_churn_gap_reconciliation {
+  label: "Churn Gap Reconciliation"
+  group_label: "Subscriptions"
+  description: "Reconciles total subscription ends against paid post-trial churn."
+}
 
 # Marketing Dash -> QA #
 

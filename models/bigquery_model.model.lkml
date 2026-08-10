@@ -154,6 +154,11 @@ explore: prod_churn_gap_reconciliation {
   group_label: "Subscriptions"
   description: "Reconciles total subscription ends against paid post-trial churn."
 }
+explore: prod_stripe_bq_reconciliation {
+  label: "Stripe vs BigQuery Reconciliation"
+  group_label: "Subscriptions"
+  description: "Monthly creator-level agreement between BigQuery subscription events and Stripe's own event table."
+}
 
 # Marketing Dash -> QA #
 

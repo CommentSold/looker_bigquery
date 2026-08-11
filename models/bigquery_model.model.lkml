@@ -160,6 +160,11 @@ explore: prod_stripe_bq_reconciliation {
   description: "Monthly creator-level agreement between BigQuery subscription events and Stripe's own event table."
 }
 
+explore: prod_cohort_retention_by_regintent {
+  label: "Cohort Retention by Reg Intent"
+  group_label: "Subscriptions"
+}
+
 # Marketing Dash -> QA #
 
 explore: trial_subscription_summary {

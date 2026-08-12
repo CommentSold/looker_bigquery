@@ -5,6 +5,56 @@
 # (dashboard.stripe.com/billing/churn) to a mean absolute error of 0.47pp
 # across 78 cells, against targets Stripe rounds to whole percent.
 #
+# GRAIN: one row per (cohort_month, event_month, utm_regintent).
+#
+# -----------------------------------------------------------------------------
+# WHAT CHANGED WHEN utm_regintent WAS ADDED
+# -----------------------------------------------------------------------------
+# utm_regintent is in the grain purely so a DASHBOARD FILTER can slice the grid.
+# With the filter cleared, every number is byte-identical to the validated
+# version, because each creator carries exactly one intent (NULL -> '(not set)')
+# so the intents PARTITION each cohort and summing across them returns the total.
+#
+# !! THE MEASURES HAD TO CHANGE FROM type: max TO WEIGHTED SUMS !!
+# With utm_regintent in the grain, a cell that does not include the intent
+# dimension covers MULTIPLE rows. type: max would return the largest single
+# segment instead of the cohort total, so every number on the heatmap would
+# silently drop. At cell level nothing changes: one row per cell means SUM
+# equals MAX equals the value.
+#
+# Also removed: the pre-computed retention_rate column and the cohort_size
+# DIMENSION. A pre-divided rate cannot be re-aggregated across segments, and a
+# cohort_size dimension would force a GROUP BY that splits every row. Both are
+# now measures. If your tile referenced the cohort_size DIMENSION, swap it for
+# the Cohort Size MEASURE — same label, one click.
+#
+# REGRESSION TEST BEFORE PUBLISHING (filter cleared):
+#   cohort   size   Mo 1
+#   2025-09    32  100.0%     2026-03    63  100.0%
+#   2025-10    83   72.3%     2026-04   341   54.8%
+#   2025-11    92   81.5%     2026-05   568   79.2%
+#   2025-12   139   46.8%     2026-06   731   55.5%
+#   2026-01    82   80.5%     2026-07   615   62.8%
+#   2026-02    76   84.2%
+# If any of these move, stop — the intent join is duplicating or dropping
+# creators and the Stripe reconciliation is broken.
+#
+# -----------------------------------------------------------------------------
+# WHAT THE FILTER DOES TO THE DENOMINATOR  (say this out loud to management)
+# -----------------------------------------------------------------------------
+# Filtering to an intent changes BOTH numerator and denominator. Cohort Size
+# becomes "creators with that intent who first paid in that month", not the whole
+# cohort. So the grid answers "of the pdf_creator creators who first paid in
+# April, how many still pay?" — which is the intended question, but it means:
+#
+#   * Cohort Size shrinks, sometimes to single digits. A row built on 4 creators
+#     will read 0% or 100%. Check Cohort Size before believing a cell.
+#   * Rows can vanish. Intent capture began around April 2026, so filtering to
+#     an agent intent empties the 2025 cohorts entirely.
+#   * THE STRIPE RECONCILIATION ONLY HOLDS WITH THE FILTER CLEARED. Stripe does
+#     not segment by intent, so there is nothing to reconcile a filtered view
+#     against. Do not cite the 0.47pp figure on a filtered screenshot.
+#
 # -----------------------------------------------------------------------------
 # THE MODEL, as validated empirically
 # -----------------------------------------------------------------------------
@@ -18,17 +68,17 @@
 #   4. NUMERATOR = running SUM(period starts - period ends) for the cohort,
 #      including returning customers' later periods.
 #
-# Points 2 and 3 together are the whole thing, and they are asymmetric on
-# purpose. Stripe's template makes this look otherwise: active_start_count
-# subtracts REACTIVATE (so the denominator is new customers only) while
-# active_count counts every ACTIVE_START (so the numerator includes returns).
+# Points 2 and 3 are asymmetric on purpose. Stripe's template makes this look
+# otherwise: active_start_count subtracts REACTIVATE (so the denominator is new
+# customers only) while active_count counts every ACTIVE_START (so the numerator
+# includes returns).
 #
 # EVIDENCE for point 2 -- the 2025-10 cohort. Stripe's Mo 8/9/10 read 25%, 24%,
 # 25% of 83, i.e. 20.75, 19.92, 20.75 subscribers. The balance OSCILLATES. This
-# view now returns 21, 20, 21. A cohort balance can only rise if returning
-# customers rejoin their original cohort. Assigning each period its own cohort
-# gives a strictly monotone balance, flat at 18, which cannot reproduce that
-# shape -- and also produced impossible >100% cells (2025-09 at 103.1%).
+# view returns 21, 20, 21. A cohort balance can only rise if returning customers
+# rejoin their original cohort. Assigning each period its own cohort gives a
+# strictly monotone balance, flat at 18, which cannot reproduce that shape --
+# and also produced impossible >100% cells (2025-09 at 103.1%).
 #
 # -----------------------------------------------------------------------------
 # COLUMN ALIGNMENT WITH STRIPE'S UI  (verified against the Sigma export)
@@ -41,7 +91,8 @@
 # Mo 6, and Feb -> Jul is five months.
 #
 # -----------------------------------------------------------------------------
-# VALIDATED COHORT SIZES  (Exclude Test Emails = No, Merge Gap Days = 1)
+# VALIDATED COHORT SIZES  (Exclude Test Emails = No, Merge Gap Days = 1,
+#                          intent filter CLEARED)
 # -----------------------------------------------------------------------------
 #   cohort    ours   Stripe Start   Stripe New
 #   2025-08     55            61            -     <- see KNOWN OUTLIERS
@@ -73,6 +124,18 @@
 #   fact_seller_subscription. No modelling change will fix it.
 #
 # -----------------------------------------------------------------------------
+# REGINTENT RESOLUTION
+# -----------------------------------------------------------------------------
+# COALESCE(onboarding event, marketing capture), the same pattern as the agent
+# trial reporting views. A USER attribute, stable per creator.
+#   * NO NORMALISATION. 'realestate', 'realestateevent' and 'real_estate' stay
+#     distinct -- their retention differs sharply, so merging destroys signal.
+#   * NO BUCKETING. No 'Other' group.
+#   * NULL is labelled '(not set)' and stays distinct from an explicit 'generic'.
+# COST: this adds a scan of popstore_onboarding_screen_action. If the tile gets
+# slow, add a datagroup or persist_for on the view.
+#
+# -----------------------------------------------------------------------------
 # STILL INHERITED FROM PRODUCTION, DELIBERATELY
 # -----------------------------------------------------------------------------
 #   * The dunning CTE is unbounded (no 60-day window), so a stale void from an
@@ -81,8 +144,6 @@
 #     cancellations, mis-dating the cancel_at_period_end IS TRUE branch.
 # Both are open items on prod_subscription_churn. Kept identical here so the
 # two views agree; fix in both or neither.
-#
-# GRAIN: one row per (cohort_month, event_month).
 # =============================================================================
 
 view: prod_subscription_cohort_retention {
@@ -92,9 +153,7 @@ view: prod_subscription_cohort_retention {
       -- ══════════════════════════════════════════════════════════════════
       -- 1) ONE ROW PER SUBSCRIPTION, LATEST STATE
       --    EXISTS rather than UNNEST so the plan filter does not fan the row
-      --    out per plan. The previous version read the history table raw,
-      --    which meant cancelled_at was NULL on pre-cancellation rows and
-      --    every cancelled subscription also emitted an open-ended span.
+      --    out per plan.
       -- ══════════════════════════════════════════════════════════════════
       latest_subscription AS (
         SELECT * EXCEPT (rn)
@@ -165,6 +224,47 @@ view: prod_subscription_cohort_retention {
       GROUP BY user_id
       ),
 
+      -- ══════════════════════════════════════════════════════════════════
+      -- UTM REGINTENT PER CREATOR
+      --    Prefer a non-generic onboarding event, fall back to the marketing
+      --    capture blob. Exactly one value per creator, which is what makes
+      --    the intents partition each cohort so a cleared filter reproduces
+      --    the validated totals.
+      -- ══════════════════════════════════════════════════════════════════
+      onboarding_regintent AS (
+      SELECT user_id, utm_regintent
+      FROM `popshoplive-26f81.popstore.popstore_onboarding_screen_action`
+      WHERE (scene = 'onboarding' OR scene IS NULL)
+      AND (step_name = 'onboarding_complete' OR step_name IS NULL)
+      AND user_id IS NOT NULL
+      QUALIFY ROW_NUMBER() OVER (
+      PARTITION BY user_id
+      ORDER BY
+      CASE WHEN utm_regintent IS NOT NULL AND utm_regintent != 'generic'
+      THEN 0 ELSE 1 END,
+      `timestamp` DESC
+      ) = 1
+      ),
+
+      marketing_regintent AS (
+      SELECT
+      user_id,
+      ANY_VALUE(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_regintent')) AS utm_regintent
+      FROM `popshoplive-26f81.dbt_popshop.dim_private_profiles`
+      WHERE user_id IS NOT NULL
+      GROUP BY user_id
+      ),
+
+      user_regintent AS (
+      SELECT
+      COALESCE(oe.user_id, mc.user_id) AS user_id,
+      -- NO NORMALISATION. Near-duplicates stay distinct on purpose.
+      COALESCE(oe.utm_regintent, mc.utm_regintent) AS utm_regintent
+      FROM onboarding_regintent oe
+      FULL OUTER JOIN marketing_regintent mc
+      ON mc.user_id = oe.user_id
+      ),
+
       scoped AS (
       SELECT
       s.subscription_id,
@@ -197,8 +297,7 @@ view: prod_subscription_cohort_retention {
       ),
 
       -- Identical to prod_subscription_churn: is_deleted filter,
-      -- COALESCE(created, created_at), America/New_York. The previous version
-      -- omitted all three, which shifted cohort assignment.
+      -- COALESCE(created, created_at), America/New_York.
       subscription_mrr AS (
       SELECT
       subscription_id,
@@ -277,22 +376,25 @@ view: prod_subscription_cohort_retention {
       ),
 
       -- ══════════════════════════════════════════════════════════════════
-      -- 3) COHORT = MONTH OF THE USER'S FIRST PERIOD
+      -- 3) COHORT = MONTH OF THE USER'S FIRST PERIOD, plus their intent.
       --    Every later period is attributed here too, which is what lets a
       --    cohort balance recover -- the behaviour Stripe's 2025-10 row shows
       --    and a per-period cohort cannot reproduce.
       -- ══════════════════════════════════════════════════════════════════
       user_cohort AS (
       SELECT
-      user_id,
-      DATE_TRUNC(MIN(period_start), MONTH) AS cohort_month
-      FROM periods
-      GROUP BY user_id
+      p.user_id,
+      DATE_TRUNC(MIN(p.period_start), MONTH) AS cohort_month,
+      COALESCE(ANY_VALUE(ur.utm_regintent), '(not set)') AS utm_regintent
+      FROM periods p
+      LEFT JOIN user_regintent ur ON ur.user_id = p.user_id
+      GROUP BY p.user_id
       ),
 
       events AS (
       SELECT
       uc.cohort_month,
+      uc.utm_regintent,
       DATE_TRUNC(p.period_start, MONTH) AS event_month,
       p.period_seq,
       1     AS delta,
@@ -304,6 +406,7 @@ view: prod_subscription_cohort_retention {
 
       SELECT
       uc.cohort_month,
+      uc.utm_regintent,
       DATE_TRUNC(p.period_end, MONTH),
       p.period_seq,
       -1,
@@ -317,20 +420,21 @@ view: prod_subscription_cohort_retention {
       monthly AS (
       SELECT
       cohort_month,
+      utm_regintent,
       event_month,
-      SUM(delta)                                    AS net_change,
-      COUNTIF(is_start AND period_seq = 1)          AS new_starts,
-      COUNTIF(is_start AND period_seq > 1)          AS returning_starts,
-      COUNTIF(NOT is_start)                         AS period_ends
+      SUM(delta)                           AS net_change,
+      COUNTIF(is_start AND period_seq = 1) AS new_starts,
+      COUNTIF(is_start AND period_seq > 1) AS returning_starts,
+      COUNTIF(NOT is_start)                AS period_ends
       FROM events
-      GROUP BY 1, 2
+      GROUP BY 1, 2, 3
       ),
 
-      -- Dense spine so a cohort with no events in a month still carries the
-      -- balance forward.
+      -- One spine per (cohort, intent) so a segment with no events in a month
+      -- still carries its balance forward.
       spine AS (
-      SELECT c.cohort_month, m AS event_month
-      FROM (SELECT DISTINCT cohort_month FROM monthly) c
+      SELECT c.cohort_month, c.utm_regintent, m AS event_month
+      FROM (SELECT DISTINCT cohort_month, utm_regintent FROM monthly) c
       CROSS JOIN UNNEST(GENERATE_DATE_ARRAY(
       c.cohort_month,
       DATE_TRUNC(CURRENT_DATE('America/New_York'), MONTH),
@@ -341,43 +445,49 @@ view: prod_subscription_cohort_retention {
       running AS (
       SELECT
       sp.cohort_month,
+      sp.utm_regintent,
       sp.event_month,
       DATE_DIFF(sp.event_month, sp.cohort_month, MONTH) AS months_since,
+      -- PARTITION must include utm_regintent or balances bleed across
+      -- segments. Summing these across segments gives the cohort total.
       SUM(COALESCE(m.net_change, 0)) OVER (
-      PARTITION BY sp.cohort_month ORDER BY sp.event_month
+      PARTITION BY sp.cohort_month, sp.utm_regintent ORDER BY sp.event_month
       ) AS active_subscribers,
       COALESCE(m.new_starts, 0)       AS new_starts,
       COALESCE(m.returning_starts, 0) AS returning_starts,
       COALESCE(m.period_ends, 0)      AS period_ends
       FROM spine sp
       LEFT JOIN monthly m
-      ON  m.cohort_month = sp.cohort_month
-      AND m.event_month  = sp.event_month
+      ON  m.cohort_month  = sp.cohort_month
+      AND m.utm_regintent = sp.utm_regintent
+      AND m.event_month   = sp.event_month
       ),
 
       -- First-time entrants only. A user's first period starts in their cohort
       -- month by definition, so these all land in months_since 0.
       sizes AS (
-      SELECT cohort_month, SUM(new_starts) AS cohort_size
+      SELECT cohort_month, utm_regintent, SUM(new_starts) AS cohort_size
       FROM monthly
-      GROUP BY cohort_month
+      GROUP BY 1, 2
       )
 
       SELECT
       r.cohort_month,
+      r.utm_regintent,
       r.event_month,
       r.months_since,
       z.cohort_size,
       r.active_subscribers,
-      SAFE_DIVIDE(r.active_subscribers, z.cohort_size) AS retention_rate,
       r.new_starts,
       r.returning_starts,
       r.period_ends,
+      r.utm_regintent NOT IN ('(not set)', 'generic') AS is_specific_intent,
       r.event_month = DATE_TRUNC(CURRENT_DATE('America/New_York'), MONTH) AS is_partial_month
       FROM running r
       INNER JOIN sizes z
-      ON z.cohort_month = r.cohort_month
-      ORDER BY r.cohort_month, r.months_since
+      ON  z.cohort_month  = r.cohort_month
+      AND z.utm_regintent = r.utm_regintent
+      ORDER BY r.cohort_month, r.utm_regintent, r.months_since
       ;;
   }
 
@@ -387,7 +497,7 @@ view: prod_subscription_cohort_retention {
     type: unquoted
     label: "Exclude Test Emails"
     default_value: "no"
-    description: "No = Stripe-comparable; Stripe applies no email filter, and turning this on was the dominant cause of the previous version's cohort-size undercount (April -28, May -24). Yes = matches the old internal dashboard."
+    description: "No = Stripe-comparable; Stripe applies no email filter, and turning this on caused a large cohort-size undercount in an earlier version (April -28, May -24). Yes = matches the old internal dashboard."
     allowed_value: { label: "No (match Stripe)"      value: "no"  }
     allowed_value: { label: "Yes (match dashboard)"  value: "yes" }
   }
@@ -405,10 +515,28 @@ view: prod_subscription_cohort_retention {
     type: string
     primary_key: yes
     hidden: yes
-    sql: CONCAT(CAST(${TABLE}.cohort_month AS STRING), '|', CAST(${TABLE}.months_since AS STRING)) ;;
+    sql: CONCAT(
+           CAST(${TABLE}.cohort_month AS STRING), '|',
+           ${TABLE}.utm_regintent, '|',
+           CAST(${TABLE}.months_since AS STRING)
+         ) ;;
   }
 
   # ——— Dimensions ———
+
+  dimension: utm_regintent {
+    type: string
+    sql: ${TABLE}.utm_regintent ;;
+    label: "Reg Intent"
+    description: "Signup intent captured at onboarding, exactly as recorded — no normalisation, no bucketing. USE AS A DASHBOARD FILTER, not as a row or column dimension: adding it to the grid splits every cohort into single-digit segments. Filtering changes the DENOMINATOR too, so Cohort Size becomes creators with that intent only. Note intent capture began around April 2026, so filtering to an agent intent empties the 2025 cohorts. The Stripe reconciliation holds only with this filter cleared."
+  }
+
+  dimension: is_specific_intent {
+    type: yesno
+    sql: ${TABLE}.is_specific_intent ;;
+    label: "Is Specific Intent"
+    description: "No for '(not set)' and 'generic'. Optional convenience filter — both remain available as their own values."
+  }
 
   dimension_group: cohort {
     type: time
@@ -473,51 +601,48 @@ view: prod_subscription_cohort_retention {
     description: "Yes for the current, incomplete month. Filter to No to reproduce Stripe's trailing edge — Stripe omits it."
   }
 
-  dimension: cohort_size {
-    type: number
-    sql: ${TABLE}.cohort_size ;;
-    label: "Cohort Size"
-    description: "First-time entrants in the cohort month. Matches Stripe's Start value within ±3 and its New-subscriber count exactly. Constant within a cohort."
-  }
-
   # ——— Measures ———
-  # Grain is one row per (cohort_month, event_month), so with rows = Cohort and
-  # columns = Cohort Age each cell maps to exactly one row and MAX is exact.
-  # Active Subscribers is ALREADY a running total: never SUM it across
-  # months_since. Always pivot or filter the age dimension.
-
-  measure: active_subscribers {
-    type: max
-    sql: ${TABLE}.active_subscribers ;;
-    label: "Active Subscribers"
-    description: "Cumulative period starts minus ends for this cohort through this month — Stripe's active_subscribers. Already a running total; do not sum across months."
-  }
+  # WEIGHTED, not type: max. With utm_regintent in the grain a cell without the
+  # intent dimension covers multiple rows, and max would return the largest
+  # single segment rather than the cohort total. At cell level SUM == MAX.
+  #
+  # Active Subscribers is ALREADY a running total: summing it across intents is
+  # correct (the segments are disjoint), summing it across months_since is NOT.
+  # Always pivot or filter the age dimension.
 
   measure: cohort_size_measure {
-    type: max
+    type: sum
     sql: ${TABLE}.cohort_size ;;
     label: "Cohort Size"
+    description: "DENOMINATOR — first-time entrants. Never shrinks from churn; that is Active Subscribers. With the intent filter cleared this matches Stripe's Start value within ±3 and its New-subscriber count exactly."
+  }
+
+  measure: active_subscribers {
+    type: sum
+    sql: ${TABLE}.active_subscribers ;;
+    label: "Active Subscribers"
+    description: "NUMERATOR — cumulative period starts minus ends for this cohort through this month, Stripe's active_subscribers. Already a running total; never sum across Cohort Age."
   }
 
   measure: retention_rate {
-    type: max
+    type: number
+    sql: SAFE_DIVIDE(SUM(${TABLE}.active_subscribers), SUM(${TABLE}.cohort_size)) ;;
     value_format_name: percent_1
-    sql: ${TABLE}.retention_rate ;;
     label: "Retention Rate"
-    description: "Active Subscribers / Cohort Size. Use with rows = Cohort, columns = Cohort Age. Mean absolute error vs Stripe 0.47pp across 78 cells."
+    description: "Active Subscribers / Cohort Size, weighted by cohort size — so it aggregates correctly across intents and a totals row gives a size-weighted average. Use with rows = Cohort, columns = Cohort Age or Stripe Column. Mean absolute error vs Stripe 0.47pp across 78 cells with the intent filter cleared."
   }
 
   # Diagnostics: these explain WHY a balance moved in a given month.
 
   measure: returning_starts {
-    type: max
+    type: sum
     sql: ${TABLE}.returning_starts ;;
     label: "Returning Starts"
-    description: "Cohort members who restarted a subscription in this month after a lapse. Non-zero values are why the balance can tick back up."
+    description: "Cohort members who restarted a subscription in this month after a lapse, credited back to their original cohort. Non-zero values are why a retention figure can tick back UP."
   }
 
   measure: period_ends {
-    type: max
+    type: sum
     sql: ${TABLE}.period_ends ;;
     label: "Period Ends"
     description: "Cohort members whose active period ended in this month."

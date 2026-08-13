@@ -15,6 +15,10 @@ explore: prod_active_paid_subscribers {
   label: "Active Paid Subscribers Prod"
   group_label: "Trial"
 }
+explore: prod_active_paid_subscribers_stripe {
+  label: "Active Paid Subscribers Stripe Prod"
+  group_label: "Subscriptions"
+}
 explore: prod_ai_pdf_generations {
   label: "AI PDF Generations Prod"
   group_label: "AI PDF"

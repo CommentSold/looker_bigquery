@@ -159,6 +159,11 @@ explore: prod_churn_gap_reconciliation {
   description: "Reconciles total subscription ends against paid post-trial churn."
 }
 
+explore: prod_signup_attribution_audit {
+  label: "Signup Attribution Audit"
+  group_label: "Signup"
+}
+
 # Marketing Dash -> QA #
 
 explore: trial_subscription_summary {

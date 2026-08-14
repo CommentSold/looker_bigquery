@@ -361,7 +361,7 @@ view: prod_churn_gap_reconciliation {
     type: count_distinct
     sql: ${TABLE}.subscription_id ;;
     filters: [gap_bucket: "Paid churn"]
-    label: "1. Paid Churn"
+    label: "Paid Churn"
     description: "Converted trial -> paid, collected >=1 payment, then churned. Matches prod_paid_subscription_cancellations."
     drill_fields: [drilldown*]
   }
@@ -370,7 +370,7 @@ view: prod_churn_gap_reconciliation {
     type: count_distinct
     sql: ${TABLE}.subscription_id ;;
     filters: [gap_bucket: "Never collected"]
-    label: "2. Never Collected"
+    label: "Never Collected"
     description: "Trial ended, invoice issued, payment never cleared. Belongs on the trial funnel, not churn."
     drill_fields: [drilldown*]
   }
@@ -379,7 +379,7 @@ view: prod_churn_gap_reconciliation {
     type: count_distinct
     sql: ${TABLE}.subscription_id ;;
     filters: [gap_bucket: "No trial (legacy)"]
-    label: "3. No Trial (Legacy)"
+    label: "No Trial (Legacy)"
     description: "trial_end IS NULL. Legacy, migrated, or comped subscriptions. Out of scope for trial -> paid -> churn."
     drill_fields: [drilldown*]
   }
@@ -388,7 +388,7 @@ view: prod_churn_gap_reconciliation {
     type: count_distinct
     sql: ${TABLE}.subscription_id ;;
     filters: [gap_bucket: "Internal / test"]
-    label: "4. Internal / Test"
+    label: "Internal / Test"
     description: "Internal email domain. prod_subscription_churn does not exclude these; the paid view does."
     drill_fields: [drilldown*]
   }

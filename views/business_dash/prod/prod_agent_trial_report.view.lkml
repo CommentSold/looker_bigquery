@@ -90,6 +90,7 @@ view: prod_agent_trial_report {
       JSON_VALUE(private_profile, '$.email') AS profile_email,
       JSON_VALUE(private_profile, '$.sellerShippingAddress.firstName') AS first_name,
       JSON_VALUE(private_profile, '$.sellerShippingAddress.lastName')  AS last_name,
+      JSON_VALUE(private_profile, '$.onboardingMarketingCapture.signup_provider') AS signup_provider,
       COALESCE(
       CASE
       WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(bot|crawler|spider|crawl|slurp|googlebot|bingpreview|facebookexternalhit|twitterbot|linkedinbot|discordbot|telegrambot|google-read-aloud)') THEN 'BOT'
@@ -230,7 +231,12 @@ view: prod_agent_trial_report {
       COALESCE(cla.email_sent_count, 0)   AS email_sent,
       COALESCE(cla.email_opened_count, 0) AS email_opened,
       COALESCE(cla.sms_sent_count, 0)     AS sms_sent,
-      COALESCE(cla.sms_opened_count, 0)   AS sms_opened
+      COALESCE(cla.sms_opened_count, 0)   AS sms_opened,
+
+      CASE WHEN mc.signup_provider = 'instagram' THEN 'Instagram'
+        WHEN mc.signup_provider = 'facebook' THEN 'Facebook'
+        ELSE 'Phone'
+      END AS signup_type
 
       FROM base
 
@@ -442,6 +448,11 @@ view: prod_agent_trial_report {
   dimension: acquisition_source {
     type: string
     sql: ${TABLE}.acquisition_source ;;
+  }
+
+  dimension: signup_type {
+    type: string
+    sql: ${TABLE}.signup_type ;;
   }
 
   # ——— Meta setup (echo_me_agents) ———
@@ -696,6 +707,7 @@ view: prod_agent_trial_report {
       business_type,
       onboarding_path,
       plan_level,
+      signup_type,
       acquisition_source,
       meta_setup_status,
       is_meta_setup_valid,

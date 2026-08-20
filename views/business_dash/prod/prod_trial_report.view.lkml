@@ -101,6 +101,7 @@ view: prod_trial_report {
         JSON_VALUE(private_profile, '$.email') AS profile_email,
         JSON_VALUE(private_profile, '$.sellerShippingAddress.firstName') AS first_name,
         JSON_VALUE(private_profile, '$.sellerShippingAddress.lastName')  AS last_name,
+        JSON_VALUE(private_profile, '$.onboardingMarketingCapture.signup_provider') AS signup_provider,
         COALESCE(
           CASE
             WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(bot|crawler|spider|crawl|slurp|googlebot|bingpreview|facebookexternalhit|twitterbot|linkedinbot|discordbot|telegrambot|google-read-aloud)') THEN 'BOT'
@@ -246,7 +247,12 @@ view: prod_trial_report {
       -- ✅ ai_pdf_generations fields — "No Record" when no match
       COALESCE(aipdf.session_id, 'No Record')    AS ai_pdf_session_id,
       COALESCE(CAST(aipdf.created_at AS STRING), 'No Record') AS ai_pdf_created_at,
-      COALESCE(aipdf.status, 'No Record')        AS ai_pdf_status
+      COALESCE(aipdf.status, 'No Record')        AS ai_pdf_status,
+
+      CASE WHEN mc.signup_provider = 'instagram' THEN 'Instagram'
+        WHEN mc.signup_provider = 'facebook' THEN 'Facebook'
+        ELSE 'Phone'
+      END AS signup_type
 
       FROM base
 
@@ -430,6 +436,11 @@ view: prod_trial_report {
     sql: ${TABLE}.acquisition_source ;;
   }
 
+  dimension: signup_type {
+    type: string
+    sql: ${TABLE}.signup_type ;;
+  }
+
   dimension: within_7_days {
     type: number
     sql: ${TABLE}.within_7_days ;;
@@ -582,6 +593,7 @@ view: prod_trial_report {
       trial_ends_at_date,
       effective_trial_ends_at_date,
       marketing_campaign,
+      signup_type,
       acquisition_source,
       utm_regintent,
       business_type,

@@ -48,6 +48,7 @@ view: prod_onboarding_funnel {
       JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent') AS user_agent,
       JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_onboarding_path') AS onboarding_path,
       JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_planlevel') AS plan_level,
+      JSON_VALUE(private_profile, '$.onboardingMarketingCapture.signup_provider') AS signup_provider,
       CASE
         WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'(bot|crawler|spider|crawl|slurp|googlebot|bingpreview|facebookexternalhit|twitterbot|linkedinbot|discordbot|telegrambot|google-read-aloud)') THEN 'BOT'
         WHEN REGEXP_CONTAINS(LOWER(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')), r'instagram') THEN 'WEBVIEW_INSTAGRAM'
@@ -90,7 +91,11 @@ view: prod_onboarding_funnel {
       WHEN mc.utm_source IS NOT NULL
       THEN 'marketing_campaign'
       ELSE 'organic_walk-in'
-      END AS acquisition_source
+      END AS acquisition_source,
+      CASE WHEN mc.signup_provider = 'instagram' THEN 'Instagram'
+        WHEN mc.signup_provider = 'facebook' THEN 'Facebook'
+        ELSE 'Phone'
+      END AS signup_type
     FROM `popshoplive-26f81.dbt_popshop.dim_profiles` prof
     LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_stores` st ON st.store_id = prof.user_id
     LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_private_profiles` pprof ON pprof.user_id = prof.user_id
@@ -151,6 +156,11 @@ view: prod_onboarding_funnel {
   dimension: acquisition_source {
     type: string
     sql: ${TABLE}.acquisition_source ;;
+  }
+
+  dimension: signup_type {
+    type: string
+    sql: ${TABLE}.signup_type ;;
   }
 
   dimension: marketing_campaign {
@@ -217,6 +227,7 @@ view: prod_onboarding_funnel {
       sign_up_user_url,
       sign_up_user_email,
       acquisition_source,
+      signup_type,
       marketing_campaign,
       utm_regintent,
       business_type,

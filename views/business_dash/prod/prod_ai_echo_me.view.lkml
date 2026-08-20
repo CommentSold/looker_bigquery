@@ -80,13 +80,15 @@ view: prod_ai_echo_me {
       COUNTIF(dma_status IN ('enabled', 'connected')) AS total_dma_active,
       COUNTIF(asa_status IN ('enabled', 'connected')) AS total_asa_active,
       COUNTIF(raca_status IN ('enabled', 'connected')) AS total_raca_active,
+      COUNTIF(grx_status IN ('enabled')) AS total_grx_active,
       -- Count rows where at least one agent is enabled or connected
       COUNTIF(
-      sea_status IN ('enabled', 'connected')
-      OR coda_status IN ('enabled', 'connected')
-      OR dma_status IN ('enabled', 'connected')
-      OR asa_status IN ('enabled', 'connected')
-      OR raca_status IN ('enabled', 'connected')
+        sea_status IN ('enabled', 'connected')
+        OR coda_status IN ('enabled', 'connected')
+        OR dma_status IN ('enabled', 'connected')
+        OR asa_status IN ('enabled', 'connected')
+        OR raca_status IN ('enabled', 'connected')
+        OR grx_status IN ('enabled', 'connected')
       ) AS total_with_any_agent_active,
       CASE
         WHEN COUNTIF(ai_echo_setup_complete = TRUE) > 0 THEN 'Yes'
@@ -107,6 +109,7 @@ view: prod_ai_echo_me {
           ARRAY_AGG(dma_status IGNORE NULLS ORDER BY dma_status_last_changed DESC LIMIT 1)[SAFE_OFFSET(0)] AS dma_status,
           ARRAY_AGG(asa_status IGNORE NULLS ORDER BY asa_status_last_changed DESC LIMIT 1)[SAFE_OFFSET(0)] AS asa_status,
           ARRAY_AGG(raca_status IGNORE NULLS ORDER BY raca_status_last_changed DESC LIMIT 1)[SAFE_OFFSET(0)] AS raca_status,
+          ARRAY_AGG(grx_status IGNORE NULLS ORDER BY grx_status_last_changed DESC LIMIT 1)[SAFE_OFFSET(0)] AS grx_status,
 
           -- Representative record fields — pick from the most recently updated row
           ARRAY_AGG(STRUCT(
@@ -129,6 +132,7 @@ view: prod_ai_echo_me {
               OR ARRAY_AGG(dma_status  IGNORE NULLS ORDER BY dma_status_last_changed  DESC LIMIT 1)[SAFE_OFFSET(0)] IN ('enabled','connected')
               OR ARRAY_AGG(asa_status  IGNORE NULLS ORDER BY asa_status_last_changed  DESC LIMIT 1)[SAFE_OFFSET(0)] IN ('enabled','connected')
               OR ARRAY_AGG(raca_status IGNORE NULLS ORDER BY raca_status_last_changed DESC LIMIT 1)[SAFE_OFFSET(0)] IN ('enabled','connected')
+              OR ARRAY_AGG(grx_status IGNORE NULLS ORDER BY grx_status_last_changed DESC LIMIT 1)[SAFE_OFFSET(0)] IN ('enabled')
             THEN 'active'
             ELSE 'inactive'
           END AS overall_agent_status
@@ -208,6 +212,7 @@ view: prod_ai_echo_me {
       em.dma_status,
       em.asa_status,
       em.raca_status,
+      em.grx_status,
       em.overall_agent_status,
       em.external_channel_id,
       em.external_channel_name,
@@ -222,6 +227,7 @@ view: prod_ai_echo_me {
       stats.total_dma_active,
       stats.total_asa_active,
       stats.total_raca_active,
+      stats.total_grx_active,
       stats.onboarding_complete,
       stats.total_with_any_agent_active,
 
@@ -414,6 +420,12 @@ view: prod_ai_echo_me {
     sql: ${TABLE}.raca_status ;;
     label: "Real Estate Concierge Agent Status"
     description: "Values: null, enabled, disabled, preview, connected"
+  }
+
+  dimension: grx_status {
+    type: string
+    sql: ${TABLE}.grx_status ;;
+    label: "Growth RX Agent Status"
   }
 
   # ——— Echo Me Stats Dimensions ———
@@ -732,6 +744,7 @@ view: prod_ai_echo_me {
       dma_status,
       asa_status,
       raca_status,
+      grx_status,
       total_echo_me_agents,
       total_with_any_agent_active,
       channel_type,

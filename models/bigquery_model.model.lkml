@@ -51,9 +51,47 @@ explore: prod_agent_trial_report {
   label: "Agent Trial Report Prod"
   group_label: "Trial"
 }
+#explore: prod_ai_echo_me {
+#  label: "AI Echo Me Prod"
+#  group_label: "AI Echo Me"
+#}
+explore: echo_me_agent_status {
+  label: "Echo Me — Agents (current state)"
+  view_label: "Agent"
+  description: "One row per user x agent. Use for agent counts, rankings, channel detail."
+  join: echo_me_user_attrs {
+    view_label: "User"
+    type: left_outer
+    relationship: many_to_one
+    sql_on: ${echo_me_agent_status.user_id} = ${echo_me_user_attrs.user_id} ;;
+  }
+}
+explore: echo_me_agent_monthly {
+  label: "Echo Me — Agents Over Time"
+  view_label: "Agent Month"
+  description: "Month x user x agent snapshots. Use for every trend line."
+  join: echo_me_user_attrs {
+    view_label: "User"
+    type: left_outer
+    relationship: many_to_one
+    sql_on: ${echo_me_agent_monthly.user_id} = ${echo_me_user_attrs.user_id} ;;
+  }
+}
 explore: prod_ai_echo_me {
-  label: "AI Echo Me Prod"
-  group_label: "AI Echo Me"
+  label: "Echo Me — Trial Users"
+  description: "One row per trial user. Use for user counts and per-user distributions."
+  # Optional: lets you build a user-grain tile that filters on a specific
+  # agent's state, e.g. "trial users whose CODA is active".
+  join: echo_me_agent_status {
+    view_label: "Agent"
+    type: left_outer
+    relationship: one_to_many
+    sql_on: ${prod_ai_echo_me.user_id} = ${echo_me_agent_status.user_id} ;;
+  }
+}
+datagroup: echo_me_default_datagroup {
+  sql_trigger: SELECT MAX(updated_at) FROM `popshoplive-26f81.commentchat.echo_me_agents` ;;
+  max_cache_age: "1 hour"
 }
 explore: prod_connection_link_email_activity {
   label: "Connection Link Email Activity Prod"
@@ -158,10 +196,13 @@ explore: prod_churn_gap_reconciliation {
   group_label: "Subscriptions"
   description: "Reconciles total subscription ends against paid post-trial churn."
 }
-
 explore: prod_signup_attribution_audit {
   label: "Signup Attribution Audit"
   group_label: "Signup"
+}
+explore: prod_subscription_price_points {
+  label: "Subscription Price Points"
+  group_label: "Subscriptions"
 }
 
 # Marketing Dash -> QA #

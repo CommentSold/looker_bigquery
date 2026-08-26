@@ -163,6 +163,10 @@ explore: prod_cumulative_creator_signups {
   label: "Cumulative Creator Signups Prod"
   group_label: "Subscriptions"
 }
+explore: prod_new_paid_subscribers_by_plan {
+  label: "New Paid Subscribers by Plan"
+  group_label: "Subscriptions"
+}
 explore: prod_monthly_paid_subscribers {
   label: "Monthly Paid Subscribers Prod"
   group_label: "Subscriptions"
@@ -202,6 +206,10 @@ explore: prod_signup_attribution_audit {
 }
 explore: prod_subscription_price_points {
   label: "Subscription Price Points"
+  group_label: "Subscriptions"
+}
+explore: prod_subscription_addons {
+  label: "Subscription Addons"
   group_label: "Subscriptions"
 }
 

@@ -64,16 +64,21 @@ view: prod_subscription_price_points {
       WITH invoice_history AS (
         SELECT
           subscription_id,
-          COUNT(DISTINCT amount_due)                      AS distinct_billed_amounts,
-          MIN(amount_due)                                 AS min_billed_amount,
-          MAX(amount_due)                                 AS max_billed_amount,
-          COUNTIF(status = 'paid' AND amount_paid > 0)    AS paid_invoice_count,
-          SUM(IF(status = 'paid', amount_paid, 0))        AS lifetime_amount_paid,
+          -- !! amount_due and amount_paid are CENTS. 2354 = $23.54, confirmed
+          -- against Stripe. fact_seller_subscription.price is DOLLARS. Every
+          -- money output below is /100 so the two are comparable.
+          -- COUNT(DISTINCT) is unit-agnostic and needs no conversion, and the
+          -- `amount_due > 0` filter is a comparison so it is correct either way.
+          COUNT(DISTINCT amount_due)                       AS distinct_billed_amounts,
+          MIN(amount_due) / 100                            AS min_billed_amount,
+          MAX(amount_due) / 100                            AS max_billed_amount,
+          COUNTIF(status = 'paid' AND amount_paid > 0)     AS paid_invoice_count,
+          SUM(IF(status = 'paid', amount_paid, 0)) / 100   AS lifetime_amount_paid,
           MIN(DATE(COALESCE(created, created_at), 'America/New_York')) AS first_billed_date,
           -- Amount on the most recent billable invoice: what they are paying now
           -- according to the billing system rather than the subscription record.
-          ARRAY_AGG(amount_due ORDER BY COALESCE(created, created_at) DESC LIMIT 1)[OFFSET(0)] AS latest_billed_amount,
-          ARRAY_AGG(amount_due ORDER BY COALESCE(created, created_at) ASC  LIMIT 1)[OFFSET(0)] AS first_billed_amount
+          ARRAY_AGG(amount_due ORDER BY COALESCE(created, created_at) DESC LIMIT 1)[OFFSET(0)] / 100 AS latest_billed_amount,
+          ARRAY_AGG(amount_due ORDER BY COALESCE(created, created_at) ASC  LIMIT 1)[OFFSET(0)] / 100 AS first_billed_amount
         FROM `popshoplive-26f81.dbt_popshop.fact_seller_subscription_invoice`
         WHERE is_deleted = FALSE
           AND amount_due > 0
@@ -91,20 +96,56 @@ view: prod_subscription_price_points {
       JSON_EXTRACT_SCALAR(plan, '$.interval')    AS plan_interval,
 
       -- ---- price ----
-      t1.price                                                AS base_price,
+      -- !! base_price comes from the PLAN ENTRY, not t1.price.
+      -- t1.price is the sum of every non-tax plan entry, so for a subscriber
+      -- holding an add-on it is plan + add-on and lands them in a phantom
+      -- price point ($39 Starter + $22 Credit Pack would read as $61).
+      -- Measured: 7 live subscriptions affected, and root_price_wrong = 7
+      -- exactly matches with_addon = 7, so add-ons are the only cause.
+      SAFE_CAST(JSON_EXTRACT_SCALAR(plan, '$.amount') AS NUMERIC) AS base_price,
+      SAFE_CAST(JSON_EXTRACT_SCALAR(plan, '$.discountAmount') AS NUMERIC) AS plan_discount_amount,
+
+      -- The subscription root, kept for comparison and for revenue.
+      t1.price                                                AS subscription_total_price,
       t1.tax_amount,
       t1.discounted_price,
+
+      -- Add-ons: anything that is neither the plan nor tax. Exclusion-based
+      -- so it survives new add-on types — there are already three:
+      -- commentChatAddOn (24), popStoreAiEchoMeAddOn (9), modelMeAddOn (2).
+      (SELECT COALESCE(SUM(SAFE_CAST(JSON_EXTRACT_SCALAR(pl, '$.amount') AS NUMERIC)), 0)
+      FROM UNNEST(t1.plans) AS pl
+      WHERE JSON_EXTRACT_SCALAR(pl, '$.planType') NOT IN ('plan', 'taxProduct')) AS addon_amount,
+      (SELECT STRING_AGG(DISTINCT JSON_EXTRACT_SCALAR(pl, '$.productName'), ', ')
+      FROM UNNEST(t1.plans) AS pl
+      WHERE JSON_EXTRACT_SCALAR(pl, '$.planType') NOT IN ('plan', 'taxProduct')) AS addon_names,
+
+      -- Total actually billed: plan + add-ons + tax, minus any discount.
+      -- VERIFIED: of 1,122 live subscriptions, 802 have discounted_price
+      -- exactly equal to price + tax, 204 have it LOWER (a genuine discount),
+      -- 116 have it NULL and fall back to price + tax. NONE are higher, so
+      -- this COALESCE is a correct "what they pay" figure.
       COALESCE(t1.discounted_price, t1.price + t1.tax_amount) AS effective_price,
       t1.discounted_price IS NOT NULL
       AND t1.discounted_price < (t1.price + t1.tax_amount)  AS has_discount,
       COALESCE(t1.discounted_price, t1.price + t1.tax_amount) = 0 AS is_zero_mrr,
 
       -- Normalised so annual and monthly plans can be summed together.
+      -- Total billed, normalised to monthly. INCLUDES tax and add-ons.
       CASE
       WHEN JSON_EXTRACT_SCALAR(plan, '$.interval') = 'year'
       THEN COALESCE(t1.discounted_price, t1.price + t1.tax_amount) / 12
       ELSE COALESCE(t1.discounted_price, t1.price + t1.tax_amount)
       END AS monthly_equivalent_price,
+
+      -- Plan list price only, normalised to monthly. EXCLUDES tax, add-ons
+      -- and discounts. Use this for grandfathering arithmetic so the answer
+      -- is not distorted by tax or an unrelated add-on.
+      CASE
+      WHEN JSON_EXTRACT_SCALAR(plan, '$.interval') = 'year'
+      THEN SAFE_CAST(JSON_EXTRACT_SCALAR(plan, '$.amount') AS NUMERIC) / 12
+      ELSE SAFE_CAST(JSON_EXTRACT_SCALAR(plan, '$.amount') AS NUMERIC)
+      END AS monthly_equivalent_plan_price,
 
       -- ---- invoice-derived history ----
       ih.distinct_billed_amounts,
@@ -312,7 +353,53 @@ view: prod_subscription_price_points {
     sql: ${TABLE}.base_price ;;
     value_format_name: usd
     label: "Base Price"
-    description: "Plan price BEFORE any coupon. THIS is the grandfathering axis — group by Price Point or this field to see who is on the old price versus the new one."
+    description: "The PLAN's own list price, read from the plan entry — excludes add-ons, tax and discounts. THIS is the grandfathering axis. Previously taken from the subscription root, which is plan + add-ons and put 7 subscribers into phantom price points."
+  }
+
+  dimension: plan_discount_amount {
+    type: number
+    sql: ${TABLE}.plan_discount_amount ;;
+    value_format_name: usd
+    label: "Plan Discount Amount"
+    description: "Discount recorded on the plan entry itself, if any."
+  }
+
+  dimension: subscription_total_price {
+    type: number
+    sql: ${TABLE}.subscription_total_price ;;
+    value_format_name: usd
+    label: "Subscription Total Price (Plan + Add-ons)"
+    description: "The subscription root price: every non-tax plan entry summed. Equals Base Price unless the subscriber holds an add-on. Exposed so the difference is visible rather than silent — this is the field that used to drive Price Point."
+  }
+
+  dimension: addon_amount {
+    type: number
+    sql: ${TABLE}.addon_amount ;;
+    value_format_name: usd
+    label: "Add-on Amount"
+    description: "Monthly value of add-ons attached to this subscription. Excludes the plan and tax."
+  }
+
+  dimension: addon_names {
+    type: string
+    sql: ${TABLE}.addon_names ;;
+    label: "Add-ons"
+    description: "Which add-ons are attached, e.g. 'Credit Pack 250'. Three types exist: commentChatAddOn, popStoreAiEchoMeAddOn and modelMeAddOn."
+  }
+
+  dimension: has_addon {
+    type: yesno
+    sql: ${TABLE}.addon_amount > 0 ;;
+    label: "Has Add-on"
+    description: "7 live subscriptions as of 2026-08-24, but add-ons recur and are sold in-app, so this grows. IMPORTANT for Price Changed: buying or cancelling an add-on changes the billed amount and trips that flag without the PLAN price having moved. Exclude add-on holders before reading Price Changed as a price migration."
+  }
+
+  dimension: monthly_equivalent_plan_price {
+    type: number
+    sql: ${TABLE}.monthly_equivalent_plan_price ;;
+    value_format_name: usd
+    label: "Monthly Equivalent (Plan Price)"
+    description: "Plan list price normalised to monthly, annual divided by 12. Excludes tax, add-ons and discounts — the clean basis for sizing a grandfathering gap."
   }
 
   dimension: price_point {
@@ -326,8 +413,8 @@ view: prod_subscription_price_points {
     type: number
     sql: ${TABLE}.effective_price ;;
     value_format_name: usd
-    label: "Effective Price"
-    description: "What the subscriber actually pays, after any coupon and including tax. Do not group by this for grandfathering — a subscriber on the current price with a coupon would appear as a separate price point."
+    label: "Total Billed"
+    description: "What the subscriber actually pays: plan + add-ons + tax, minus any discount. Verified across 1,122 live subscriptions — 802 equal price+tax, 204 lower (a real discount), 116 NULL and falling back to price+tax, none higher. Do NOT group by this for grandfathering: tax, a coupon or an add-on would each split one price point into several."
   }
 
   dimension: tax_amount {
@@ -355,8 +442,8 @@ view: prod_subscription_price_points {
     type: number
     sql: ${TABLE}.monthly_equivalent_price ;;
     value_format_name: usd
-    label: "Monthly Equivalent Price"
-    description: "Annual prices divided by 12 so monthly and annual plans can be summed together."
+    label: "Monthly Equivalent (Total Billed)"
+    description: "Total billed normalised to monthly, annual divided by 12. INCLUDES tax and add-ons, so it is the revenue figure, not the plan price. For grandfathering arithmetic use Monthly Equivalent (Plan Price)."
   }
 
   # ——— Price history, from invoices ———
@@ -365,7 +452,7 @@ view: prod_subscription_price_points {
     type: yesno
     sql: ${TABLE}.price_changed ;;
     label: "Price Changed"
-    description: "This subscription has been charged more than one distinct amount, so it MOVED between price points at some point. The subscription table shows current state only, so this is the only way to identify migrated subscribers. Caution: a changed COUPON also triggers this — cross-check Has Discount."
+    description: "This subscription has been charged more than one distinct amount. The subscription table shows current state only, so this is the only way to spot a price migration. TWO OTHER THINGS ALSO TRIP IT: a changed coupon, and buying or cancelling an ADD-ON (the Credit Pack alone moves a bill by $22). Cross-check Has Discount and Has Add-on before reading this as a plan price change."
   }
 
   dimension: distinct_billed_amounts {
@@ -533,8 +620,41 @@ view: prod_subscription_price_points {
     type: sum
     sql: ${TABLE}.monthly_equivalent_price ;;
     value_format_name: usd
-    label: "Monthly Revenue (Equivalent)"
-    description: "Sum of monthly-equivalent effective prices, annual divided by 12. Shows what each price point is worth per month."
+    label: "Monthly Revenue (Total Billed)"
+    description: "Monthly-equivalent TOTAL BILLED summed, annual divided by 12. Includes tax and add-ons, so it will not equal Base Price x subscriber count — that gap is tax, plus add-ons for the 7 subscribers holding one. For plan-only arithmetic use Monthly Plan Revenue."
+  }
+
+  measure: total_monthly_plan_revenue {
+    type: sum
+    sql: ${TABLE}.monthly_equivalent_plan_price ;;
+    value_format_name: usd
+    label: "Monthly Plan Revenue"
+    description: "Monthly-equivalent PLAN list price summed — excludes tax, add-ons and discounts. Equals Base Price x ACTIVE subscriber count, which INCLUDES fully-discounted subscriptions paying nothing. For a revenue figure use Monthly Plan Revenue (Paying Only)."
+  }
+
+  measure: total_monthly_plan_revenue_paying {
+    type: sum
+    sql: IF(${TABLE}.is_zero_mrr, 0, ${TABLE}.monthly_equivalent_plan_price) ;;
+    value_format_name: usd
+    label: "Monthly Plan Revenue (Paying Only)"
+    description: "Plan list price summed across PAYING subscriptions only, excluding fully-discounted ones. Monthly Plan Revenue counts every subscription at its list price, including those paying nothing — for Real Estate Pro $500/year that is 56 subscriptions at $2,333/month when 8 of them pay $0, so the real figure is nearer $2,000. Use this one for anything revenue-facing."
+  }
+
+  measure: total_monthly_addon_revenue {
+    type: sum
+    sql: ${TABLE}.addon_amount ;;
+    value_format_name: usd
+    label: "Monthly Add-on Revenue"
+    description: "Add-on value attached to these subscriptions, monthly. Small today but recurring and sold in-app."
+  }
+
+  measure: subscriptions_with_addon {
+    type: count_distinct
+    sql: ${TABLE}.subscription_id ;;
+    filters: [has_addon: "yes"]
+    label: "Subscriptions With Add-on"
+    description: "7 as of 2026-08-24. Watch this alongside Price Changed — a rise means more of that flag is add-on activity rather than price migration."
+    drill_fields: [price_detail*]
   }
 
   measure: avg_base_price {
@@ -559,7 +679,7 @@ view: prod_subscription_price_points {
       - SUM(${TABLE}.base_price) ;;
     value_format_name: usd
     label: "Gap vs Highest Price in Group"
-    description: "What this group would bill at the highest base price present in it, minus what it bills now. Group by Plan Name to size the grandfathering discount per plan. Only meaningful within a single plan and interval — across mixed plans the highest price is arbitrary."
+    description: "What this group would bill at the highest base price present in it, minus what it bills now. Now built on PLAN price, so tax and add-ons no longer distort it. Group by Plan Name to size the grandfathering discount per plan. Only meaningful within a single plan and interval — across mixed plans the highest price is arbitrary."
   }
 
   # ——— Drill Set ———
@@ -575,6 +695,9 @@ view: prod_subscription_price_points {
       plan_interval,
       price_point,
       base_price,
+      addon_amount,
+      addon_names,
+      subscription_total_price,
       effective_price,
       has_discount,
       status,

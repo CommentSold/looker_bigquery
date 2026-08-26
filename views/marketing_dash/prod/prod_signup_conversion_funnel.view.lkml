@@ -278,6 +278,18 @@ view: prod_signup_conversion_funnel {
       COALESCE(DATE_DIFF(uph.first_paid_date, s.signup_date, DAY) <= 30, FALSE) AS paid_within_30d,
       COALESCE(DATE_DIFF(us.first_sub_date,   s.signup_date, DAY) <= 7,  FALSE) AS subscribed_within_7d,
       COALESCE(DATE_DIFF(us.first_sub_date,   s.signup_date, DAY) <= 30, FALSE) AS subscribed_within_30d,
+      COALESCE(DATE_DIFF(uph.first_paid_date, us.first_sub_date, DAY) <= 8, FALSE)
+        AND COALESCE(DATE_DIFF(us.first_sub_date, s.signup_date, DAY) <= 7, FALSE)
+        AS paid_within_8d_of_trial,
+
+      -- TRUE (not FALSE) when first_sub_date IS NULL. A creator who never
+      -- started a trial sits on neither side of a trial-denominated ratio, so
+      -- excluding them would silently gut every signup-denominated measure on
+      -- the same tile — Signup → Trial Start would read ~100%.
+      COALESCE(DATE_DIFF(CURRENT_DATE('America/New_York'), us.first_sub_date, DAY) >= 7, TRUE)
+        AS is_trial_observable_7d,
+
+      DATE_DIFF(uph.first_paid_date, us.first_sub_date, DAY) AS days_trial_to_pay,
 
       uph.total_billable_paid_invoices > 0 AS ever_paid,
       us.total_subs > 0                    AS ever_subscribed,
@@ -538,7 +550,57 @@ view: prod_signup_conversion_funnel {
     }
   }
 
+  dimension: is_trial_observable_7d {
+    type: yesno
+    sql: ${TABLE}.is_trial_observable_7d ;;
+    label: "Is Trial Observable 7d"
+    description: "Yes when the creator's FIRST TRIAL started at least 7 days ago, OR they never started one. Is Observable 7d keys on SIGNUP date and does not protect trial-denominated measures — a creator can be 20 days past signup and 1 day into a trial. Filter to Yes on any Trial Start → Paid tile. Never-trialers are Yes by design so this filter does not distort Total Sign-ups or Signup → Trial Start on the same tile."
+  }
+
+  dimension: paid_within_8d_of_trial {
+    type: yesno
+    sql: ${TABLE}.paid_within_8d_of_trial ;;
+    hidden: yes
+    # Strict subset of subscribed_within_7d by construction. 8 not 7: a trial
+    # starting day D bills day D+7 and the extra day absorbs a boundary slip.
+    # Quantified by pays_on_day_8 / pays_after_day_8 in the debug SQL.
+  }
+
+  dimension: days_trial_to_pay {
+    type: number
+    sql: ${TABLE}.days_trial_to_pay ;;
+    label: "Days Trial Start → Pay"
+    description: "Days from first trial start to first payment. Should cluster at 7. Distinct from Days to Pay, which counts from signup and so is inflated for creators who signed up and trialled later."
+  }
+
   # ——— Measures ———
+
+  measure: paid_within_8d_of_trial_count {
+    type: count_distinct
+    sql: ${TABLE}.user_id ;;
+    filters: [paid_within_8d_of_trial: "yes"]
+    label: "Converted on Trial Clock (Count)"
+    description: "Numerator of Trial Start → Paid, 7 Days. Ship this beside the rate — rate measures drill to the denominator."
+    drill_fields: [drill_details*]
+  }
+
+  measure: trial_to_paid_7d {
+    type: number
+    sql: SAFE_DIVIDE(
+           COUNT(DISTINCT IF(${TABLE}.paid_within_8d_of_trial, ${TABLE}.user_id, NULL)),
+           COUNT(DISTINCT IF(${TABLE}.subscribed_within_7d,    ${TABLE}.user_id, NULL))) ;;
+    value_format_name: percent_1
+    label: "Trial Start → Paid, 7 Days (%)"
+    description: "Of creators who started a trial within 7 days of signup, the share who paid within 8 days OF TRIAL START. Cohort-stable — unlike Trial Start → Paid (%), which is ever/ever and restates history every week. Numerator is a strict subset of the denominator, so this cannot exceed 100%. REQUIRES Is Trial Observable 7d = Yes."
+    drill_fields: [drill_details*]
+  }
+
+  measure: trial_clock_subset_check {
+    type: number
+    sql: ${paid_within_8d_of_trial_count} - LEAST(${paid_within_8d_of_trial_count}, ${subscribed_within_7d_count}) ;;
+    label: "Trial Clock Subset Check"
+    description: "Must always be 0. Non-zero means the trial-clock numerator has escaped its denominator and Trial Start → Paid, 7 Days can read above 100%."
+  }
 
   measure: total_signups {
     type: count_distinct

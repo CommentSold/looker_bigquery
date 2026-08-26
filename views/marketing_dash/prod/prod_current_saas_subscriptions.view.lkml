@@ -96,6 +96,18 @@ view: prod_current_saas_subscriptions {
       t1.current_period_end,
       COALESCE(t1.discounted_price, t1.price + t1.tax_amount)      AS price,
       COALESCE(t1.discounted_price, t1.price + t1.tax_amount) = 0  AS is_zero_mrr,
+
+      -- ADDED, nothing above changed. The plan's own list price and its
+      -- add-ons, so a subscriber holding one is not mistaken for being on a
+      -- different plan price. t1.price is plan + add-ons; 7 live
+      -- subscriptions are affected today, and add-ons recur.
+      -- is_zero_mrr is DELIBERATELY untouched: it feeds the Stripe-comparable
+      -- measure validated at 1,009 against Stripe's 1,011, and changing its
+      -- basis would invalidate that reconciliation.
+      SAFE_CAST(JSON_EXTRACT_SCALAR(plan, '$.amount') AS NUMERIC) AS plan_price,
+      (SELECT COALESCE(SUM(SAFE_CAST(JSON_EXTRACT_SCALAR(pl, '$.amount') AS NUMERIC)), 0)
+      FROM UNNEST(t1.plans) AS pl
+      WHERE JSON_EXTRACT_SCALAR(pl, '$.planType') NOT IN ('plan', 'taxProduct')) AS addon_amount,
       eb.subscription_id IS NOT NULL                               AS has_ever_billed,
       JSON_EXTRACT_SCALAR(plan, '$.productName') AS subscription_product_name,
       JSON_EXTRACT_SCALAR(plan, '$.interval')    AS subscription_interval
@@ -163,6 +175,44 @@ view: prod_current_saas_subscriptions {
     description: "active (includes scheduled cancellations still billing), trialing ($0 MRR), or past_due (live until explicitly cancelled). Terminal statuses — canceled, unpaid — are excluded."
   }
 
+  dimension: status_detail {
+    type: string
+    sql:
+      CASE
+        WHEN ${TABLE}.status = 'active' AND ${TABLE}.cancel_at_period_end IS TRUE
+          THEN 'Active (cancelling)'
+        WHEN ${TABLE}.status = 'active'   THEN 'Active'
+        WHEN ${TABLE}.status = 'past_due' THEN 'Retrying'
+        WHEN ${TABLE}.status = 'trialing' THEN 'Trialing'
+        ELSE CONCAT('Other: ', COALESCE(${TABLE}.status, 'NULL'))
+      END ;;
+    order_by_field: status_detail_sort
+    label: "Status Detail"
+    description: "Status with active split by whether a cancellation is already scheduled. Same population and same totals as Status — 'Active (cancelling)' subscriptions are STILL BILLING until their period ends and are counted. Pivot on this instead of Status to see committed near-term churn inside each plan."
+  }
+
+  dimension: status_detail_sort {
+    type: number
+    hidden: yes
+    sql:
+      CASE
+        WHEN ${TABLE}.status = 'active' AND ${TABLE}.cancel_at_period_end IS TRUE THEN 2
+        WHEN ${TABLE}.status = 'active'   THEN 1
+        WHEN ${TABLE}.status = 'past_due' THEN 3
+        WHEN ${TABLE}.status = 'trialing' THEN 4
+        ELSE 5
+      END ;;
+  }
+
+  measure: active_cancelling_count {
+    type: count_distinct
+    sql: ${TABLE}.subscription_id ;;
+    filters: [status: "active", is_scheduled_to_cancel: "yes"]
+    label: "Active (Cancelling)"
+    description: "Still billing, but a cancellation is already scheduled. Churn committed with a known date — arguably the most actionable number on the tile."
+    drill_fields: [detail*]
+  }
+
   dimension: is_scheduled_to_cancel {
     type: yesno
     sql: ${TABLE}.cancel_at_period_end IS TRUE ;;
@@ -210,6 +260,28 @@ view: prod_current_saas_subscriptions {
     description: "Product name and billing interval, e.g. 'Launch: month'"
   }
 
+  dimension: plan_price {
+    type: number
+    sql: ${TABLE}.plan_price ;;
+    value_format_name: decimal_2
+    label: "Plan Price"
+    description: "The plan's own list price, from the plan entry — excludes add-ons, tax and discounts. Price is plan + add-ons + tax minus discount, so the two differ for anyone holding an add-on."
+  }
+
+  dimension: addon_amount {
+    type: number
+    sql: ${TABLE}.addon_amount ;;
+    value_format_name: decimal_2
+    label: "Add-on Amount"
+    description: "Monthly add-on value. Three types exist: commentChatAddOn, popStoreAiEchoMeAddOn (Credit Pack) and modelMeAddOn. 7 live subscriptions carry one as of 2026-08-24."
+  }
+
+  dimension: has_addon {
+    type: yesno
+    sql: ${TABLE}.addon_amount > 0 ;;
+    label: "Has Add-on"
+  }
+
   dimension: price {
     type: number
     sql: ${TABLE}.price ;;
@@ -232,18 +304,6 @@ view: prod_current_saas_subscriptions {
     timeframes: [date, week, month, year]
     label: "Period Ends"
     description: "End of the paid period. For a scheduled cancellation this is when the subscription actually lapses, so it forecasts near-term churn. Caution: current_period_end is overwritten to the cancellation instant on some cancellations — an open issue on prod_subscription_churn — so treat it as indicative for terminal subscriptions."
-  }
-
-  dimension: status_detail {
-    type: string
-    sql:
-      CASE
-        WHEN ${TABLE}.status = 'active' AND ${TABLE}.cancel_at_period_end IS TRUE
-          THEN 'active (cancelling)'
-        ELSE ${TABLE}.status
-      END ;;
-    label: "Status Detail"
-    description: "Splits active into renewing vs already scheduled to cancel. Same population as Status — 'active (cancelling)' subscriptions are still billing."
   }
 
   # ——— Measures ———

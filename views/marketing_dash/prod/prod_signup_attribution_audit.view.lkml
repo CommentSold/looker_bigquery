@@ -150,8 +150,10 @@ view: prod_signup_attribution_audit {
       invoice_summary AS (
       SELECT
       subscription_id,
-      COUNTIF(status = 'paid' AND amount_paid > 0)  AS paid_invoices,
-      SUM(IF(status = 'paid', amount_paid, 0))      AS total_amount_paid,
+      COUNTIF(status = 'paid' AND amount_paid > 0)     AS paid_invoices,
+      -- !! CENTS. 2354 = $23.54, confirmed against Stripe. /100 to dollars.
+      -- The `> 0` filters are comparisons and correct in either unit.
+      SUM(IF(status = 'paid', amount_paid, 0)) / 100   AS total_amount_paid,
       COUNTIF(status IN ('uncollectible', 'void'))  AS failed_or_void_invoices,
       MIN(IF(status = 'paid' AND amount_due > 0 AND amount_paid > 0,
       DATE(COALESCE(created, created_at), 'America/New_York'), NULL)) AS first_billable_paid_date,
@@ -182,6 +184,9 @@ view: prod_signup_attribution_audit {
       t1.cancel_at_period_end,
       JSON_EXTRACT_SCALAR(plan, '$.productName') AS plan_name,
       JSON_EXTRACT_SCALAR(plan, '$.interval')    AS plan_interval,
+      -- Plan list price, from the plan entry. t1.price is plan + add-ons.
+      SAFE_CAST(JSON_EXTRACT_SCALAR(plan, '$.amount') AS NUMERIC)  AS plan_price,
+      -- Total billed: plan + add-ons + tax, minus discount.
       COALESCE(t1.discounted_price, t1.price + t1.tax_amount)     AS price,
       COALESCE(t1.discounted_price, t1.price + t1.tax_amount) = 0 AS is_fully_discounted,
       DATE(t1.initial_start_date,      'America/New_York') AS trial_started,
@@ -263,6 +268,7 @@ view: prod_signup_attribution_audit {
       s.plan_name,
       s.plan_interval,
       s.price,
+      s.plan_price,
       s.is_fully_discounted,
       s.status AS subscription_status_raw,
       s.subscription_state,
@@ -339,12 +345,12 @@ view: prod_signup_attribution_audit {
       CASE
         WHEN ${TABLE}.reg_intent_raw IS NOT NULL             THEN 'Attributed'
         WHEN NOT ${TABLE}.has_capture_blob
-             AND NOT ${TABLE}.has_legacy_onboarding_row      THEN 'No attribution data at all'
-        WHEN NOT ${TABLE}.has_capture_blob                   THEN 'Legacy event only, no capture blob'
+             AND NOT ${TABLE}.has_legacy_onboarding_row      THEN '1. No attribution data at all'
+        WHEN NOT ${TABLE}.has_capture_blob                   THEN '2. Legacy event only, no capture blob'
         WHEN ${TABLE}.utm_source IS NOT NULL
-             OR ${TABLE}.utm_campaign IS NOT NULL            THEN 'Capture blob has other UTMs, no regintent'
-        WHEN ${TABLE}.landing_url IS NOT NULL                THEN 'Capture blob has landing URL only'
-        ELSE                                                      'Capture blob exists but empty'
+             OR ${TABLE}.utm_campaign IS NOT NULL            THEN '3. Capture blob has other UTMs, no regintent'
+        WHEN ${TABLE}.landing_url IS NOT NULL                THEN '4. Capture blob has landing URL only'
+        ELSE                                                      '5. Capture blob exists but empty'
       END ;;
     label: "Why Not Set"
     description: "Describes which attribution FIELDS are present on the record — nothing about what their values mean. Bucket 1 is expected for creators predating the marketing capture. Buckets 3 and 4 are records where the capture ran and stored something but utm_regintent specifically was empty."
@@ -439,7 +445,16 @@ view: prod_signup_attribution_audit {
     type: number
     sql: ${TABLE}.price ;;
     value_format_name: decimal_2
-    label: "Price"
+    label: "Total Billed"
+    description: "Plan + add-ons + tax, minus any discount. For the plan's own list price use Plan Price."
+  }
+
+  dimension: plan_price {
+    type: number
+    sql: ${TABLE}.plan_price ;;
+    value_format_name: decimal_2
+    label: "Plan Price"
+    description: "The plan's own list price, read from the plan entry — excludes add-ons, tax and discounts."
   }
 
   dimension: is_fully_discounted {
@@ -474,6 +489,7 @@ view: prod_signup_attribution_audit {
     sql: ${TABLE}.total_amount_paid ;;
     value_format_name: decimal_2
     label: "Total Amount Paid"
+    description: "Lifetime collected on this subscription, in DOLLARS. The source column is cents and is divided by 100 — before this fix every figure here read 100x too high."
   }
 
   dimension: days_signup_to_first_payment {
@@ -524,7 +540,7 @@ view: prod_signup_attribution_audit {
     sql: ${TABLE}.total_amount_paid ;;
     value_format_name: decimal_2
     label: "Total Revenue Collected"
-    description: "Summed at subscription grain, so safe to aggregate. Shows what the unattributed segment is actually worth."
+    description: "Summed at subscription grain, so safe to aggregate. In DOLLARS — the source column is cents and is divided by 100. Shows what the unattributed segment is actually worth."
   }
 
   measure: pct_paid {
@@ -543,7 +559,7 @@ view: prod_signup_attribution_audit {
       reg_intent, why_not_set, url_reg_param, url_niche_slug,
       utm_campaign, utm_source, landing_url, onboarding_path, plan_level, user_agent,
       payment_status,
-      subscription_id, plan_name, plan_interval, price, is_fully_discounted,
+      subscription_id, plan_name, plan_interval, plan_price, price, is_fully_discounted,
       subscription_status_raw, subscription_state,
       trial_started_date, trial_ended_date,
       period_start_date, period_end_date,

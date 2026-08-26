@@ -353,6 +353,17 @@ view: prod_active_paid_subscribers {
       COALESCE(fs.discounted_price, fs.price + fs.tax_amount)     AS price,
       COALESCE(fs.discounted_price, fs.price + fs.tax_amount) = 0 AS is_currently_zero_mrr,
 
+      -- ADDED, nothing above changed. fs.price is plan + add-ons, so the
+      -- plan's own list price is read from the plan entry instead. 7 live
+      -- subscriptions carry an add-on today, and add-ons recur.
+      -- is_currently_zero_mrr is DELIBERATELY untouched — it is informational
+      -- here (the four segments run off has_ever_billed, which is invoice-
+      -- based) and changing its basis risks the Stripe-validated segmentation.
+      SAFE_CAST(JSON_EXTRACT_SCALAR(plan, '$.amount') AS NUMERIC) AS plan_price,
+      (SELECT COALESCE(SUM(SAFE_CAST(JSON_EXTRACT_SCALAR(pl, '$.amount') AS NUMERIC)), 0)
+      FROM UNNEST(fs.plans) AS pl
+      WHERE JSON_EXTRACT_SCALAR(pl, '$.planType') NOT IN ('plan', 'taxProduct')) AS addon_amount,
+
       JSON_EXTRACT_SCALAR(plan, '$.productName') AS plan_name,
       JSON_EXTRACT_SCALAR(plan, '$.interval')    AS plan_interval,
       fs.initial_start_date AS trial_starts,
@@ -541,6 +552,28 @@ view: prod_active_paid_subscribers {
   dimension: acquisition_source {
     type: string
     sql: ${TABLE}.acquisition_source ;;
+  }
+
+  dimension: plan_price {
+    type: number
+    sql: ${TABLE}.plan_price ;;
+    value_format_name: decimal_2
+    label: "Plan Price"
+    description: "The plan's own list price, from the plan entry — excludes add-ons, tax and discounts. Price is plan + add-ons + tax minus discount, so the two differ for anyone holding an add-on. Both are CURRENT state; neither is historical."
+  }
+
+  dimension: addon_amount {
+    type: number
+    sql: ${TABLE}.addon_amount ;;
+    value_format_name: decimal_2
+    label: "Add-on Amount"
+    description: "Monthly add-on value. Three types exist: commentChatAddOn, popStoreAiEchoMeAddOn (Credit Pack) and modelMeAddOn. 7 live subscriptions carry one as of 2026-08-24."
+  }
+
+  dimension: has_addon {
+    type: yesno
+    sql: ${TABLE}.addon_amount > 0 ;;
+    label: "Has Add-on"
   }
 
   dimension: price {

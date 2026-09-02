@@ -346,6 +346,14 @@ view: prod_trial_report {
     label: "Interval"
   }
 
+  dimension: plan_interval_combined {
+    type: string
+    sql: CONCAT(COALESCE(${TABLE}.plan_name, '(unknown)'), ': ',
+      COALESCE(${TABLE}.plan_interval, '(unknown)')) ;;
+    label: "Plan: Interval"
+    description: "Pivot on this for the stacked bar, matching prod_new_paid_subscribers_by_plan."
+  }
+
   dimension: trial_status {
     type: string
     sql: ${TABLE}.trial_status ;;

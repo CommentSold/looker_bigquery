@@ -51,10 +51,10 @@ explore: prod_agent_trial_report {
   label: "Agent Trial Report Prod"
   group_label: "Trial"
 }
-#explore: prod_ai_echo_me {
-#  label: "AI Echo Me Prod"
-#  group_label: "AI Echo Me"
-#}
+explore: prod_daily_subscribers_report {
+  label: "Daily Subscribers Report"
+  group_label: "Subscriptions"
+}
 explore: echo_me_agent_status {
   label: "Echo Me — Agents (current state)"
   view_label: "Agent"

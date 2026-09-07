@@ -255,6 +255,7 @@ view: prod_daily_subscribers_report {
       CONCAT(sq.user_id, '-', sq.subscription_id) AS row_key,
 
       DATE(sq.paid_ts, 'America/New_York') AS paid_date,
+      DATETIME(sq.paid_ts, 'America/New_York') AS paid_at_et,
       sq.payment_amount,
       sq.payment_sequence,
       sq.prev_subscription_id,
@@ -332,6 +333,16 @@ view: prod_daily_subscribers_report {
     timeframes: [date, week, month, quarter, year]
     label: "Paid"
     description: "Day of this subscription's first billable collected payment, America/New_York. The x-axis."
+  }
+
+  dimension_group: paid_at {
+    type: time
+    timeframes: [time, hour, minute, hour_of_day, day_of_week]
+    datatype: datetime
+    convert_tz: no
+    sql: ${TABLE}.paid_at_et ;;
+    label: "Paid At (ET)"
+    description: "Exact moment the first billable payment was collected, in America/New_York. Converted in SQL, not by Looker: this model sets no query_timezone, so convert_tz would fall back to a connection default that an admin can change and that may resolve per-user. Stripe's own timestamp, not our ingestion time."
   }
 
   dimension_group: signup {
@@ -656,7 +667,7 @@ view: prod_daily_subscribers_report {
     fields: [
       user_id,
       subscription_id,
-      paid_date,
+      paid_at_time,
       subscriber_type,
       payment_sequence,
       days_since_previous_payment,

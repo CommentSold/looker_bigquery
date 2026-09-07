@@ -55,6 +55,10 @@ explore: prod_daily_subscribers_report {
   label: "Daily Subscribers Report"
   group_label: "Subscriptions"
 }
+explore: prod_daily_subscriber_churn {
+  label: "Daily Subscriber Churn"
+  group_label: "Subscriptions"
+}
 explore: echo_me_agent_status {
   label: "Echo Me — Agents (current state)"
   view_label: "Agent"

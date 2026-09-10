@@ -9,48 +9,55 @@
 # and has since reached a terminal or dunning status.
 #
 # -----------------------------------------------------------------------------
-# !! PAYMENT-FAILURE CHURN IS UNDERCOUNTED RIGHT NOW (as at 2026-09-08) !!
+# !! PAYMENT-FAILURE CHURN LAGS BY ~2 WEEKS (as at 2026-09-09) !!
 # -----------------------------------------------------------------------------
-# September shows almost no payment-failure churn. That is a recognition delay,
-# not an improvement in retention, and not a defect in this view.
+# September shows little payment-failure churn. That is a recognition delay, not
+# improved retention, and not a defect in this view.
 #
-# VERIFIED:
-#   * Payments are still failing at the normal rate. Billable invoices not
-#     collected: 32.0% for 2026-08-01..30, 31.4% for 2026-08-31 onward.
-#   * 84 eligible subscriptions sit in past_due with unresolved failed invoices,
-#     $2,433.16 outstanding. 83 of the 84 have a retry scheduled in Stripe; the
-#     latest is 2026-09-16.
-#   * A subscription is only written off once retries are exhausted, and this
-#     view keys payment-failure churn off that write-off. So those 84 will land
-#     on the chart as they resolve, and early-September bars WILL GROW.
+# CONFIRMED with the person who administers Stripe: the retry schedule was
+# changed a few days before 2026-09-09 to **8 attempts over 2 weeks**. Nothing
+# is written off until retries are exhausted, and this view keys
+# payment-failure churn off the write-off. So a card that declines today
+# surfaces as churn about two weeks later, and recent bars grow.
 #
-# NOT ESTABLISHED — do not repeat as fact:
-#   * WHY the backlog is larger than usual. A lengthened Stripe retry schedule
-#     is the leading theory but has not been demonstrated. The obvious test —
-#     comparing days-to-next-retry before and after 2026-08-30 — does not work:
-#     August invoices are almost all written off already and a written-off
-#     invoice has no next retry, so the comparison measures resolution status
-#     rather than schedule. Restricted to live subscriptions, August returns no
-#     rows at all and there is no baseline. Settle it from Stripe Dashboard ->
-#     Settings -> Billing -> Manage failed payments, which shows the schedule
-#     and its edit history.
+# The change is also visible in invoice event timelines:
+#   August    KGMPAFZA-0004 — failed 25 Aug 01:48, failed 26 Aug 01:50, marked
+#             uncollectible 26 Aug 01:50. Two attempts, write-off in the same
+#             minute as the second.
+#   September two attempts, then a third scheduled 8-12 days out.
 #
-# ALSO CHECKED AND CLEARED:
-#   * The loader is healthy: 55-85 invoice rows updated every day through the
-#     period, uncollectible still appearing.
-#   * Cancelled subscriptions carrying a nextPaymentAttempt are NOT pending
-#     charges. Stripe turns automatic collection off at cancellation and leaves
-#     the field populated; the invoice stays `open` forever. Confirmed in the
-#     Stripe UI on sub_1U9hcv and sub_1TNqmO.
+# Supporting measurements (2026-09-08/09, eligible population):
+#   * Failure rate unchanged: 32.0% of billable invoices not collected
+#     2026-08-01..30, 31.4% from 2026-08-31.
+#   * 42 paid subscribers in past_due awaiting recognition, $1,387.30
+#     outstanding. A further 54 past_due subscriptions have unresolved failed
+#     invoices but never collected a payment — all trial conversions that
+#     failed at trial end, already counted as non-converters in
+#     prod_signup_conversion_funnel and correctly absent here. Earlier figures
+#     of 84 and 96 conflated the two.
+#   * Recovery is real but invisible on every chart: 45 subscriptions recovered
+#     after at least one failed attempt and returned to active. They simply
+#     leave the retrying series. 18 more recovered and then cancelled anyway.
 #
-# Dunning Stalled (Should Be Near 0) monitors this. It fires only when Stripe
-# has NO further retry planned and the row still has not been written off, so it
-# survives retry-schedule changes.
+# !! DO NOT try to demonstrate the schedule change from aggregates. !! August
+# invoices are almost all written off, and a written-off invoice has no next
+# retry, so a before/after comparison measures resolution status rather than
+# schedule. Restricted to live subscriptions August returns no rows at all.
+# Event timelines on individual invoices are the only reliable evidence.
 #
-# KNOWN GAP, roughly 30 a month: a subscription cancelled within a day of a
-# failed payment, with no dunning record, classifies as Voluntary rather than
-# Payment failed. Real but unquantified as to cause — the gap between failure
-# and cancellation has not been profiled, so no branch has been added for it.
+# Dunning Stalled (Should Be Near 0) monitors the failure mode this is NOT:
+# it fires only when Stripe has no further retry planned and the row still has
+# not been written off, so it survives schedule changes.
+#
+# ALSO CLEARED: cancelled subscriptions carrying a nextPaymentAttempt are not
+# pending charges. Stripe turns automatic collection off at cancellation and
+# leaves the field populated; the invoice stays `open` forever. Confirmed in
+# the Stripe UI on sub_1U9hcv and sub_1TNqmO.
+#
+# KNOWN GAP, ~30 a month: a subscription cancelled within a day of a failed
+# payment with NO dunning record classifies as Voluntary rather than Payment
+# failed. Distinct from dunning write-offs, which classify correctly (353 of
+# 354 since 2026-08-01). Cause unprofiled — no branch added.
 #
 # -----------------------------------------------------------------------------
 # WHY THE SUBSCRIBERS TILE NEVER DECREASES
@@ -437,7 +444,13 @@ view: prod_daily_subscriber_churn {
       COALESCE(c.status_flip_cancelled_at, d.dunning_end_ts, sp.cancelled_at),
       'America/New_York')
       END,
-      DATE(ff.first_unpaid_invoice_ts, 'America/New_York')
+      DATE(ff.first_unpaid_invoice_ts, 'America/New_York'),
+      -- Third fallback: a lodged cancellation has no churn date and no
+      -- failed invoice, so date it by WHEN THEY CANCELLED. That is the
+      -- actionable date for a win-back queue. When the period ends the row
+      -- flips to 'canceled' and the first branch takes over, moving the bar
+      -- to current_period_end — typically about a month later.
+      DATE(sp.cancelled_at, 'America/New_York')
       ) AS churn_or_pending_date,
 
       -- Coarse, for the pivot.
@@ -450,6 +463,8 @@ view: prod_daily_subscriber_churn {
       AND d.dunning_end_ts IS NOT NULL
       AND sp.cancellation_applied_at IS NULL THEN 'Payment failed'
       WHEN sp.status = 'canceled' THEN 'Voluntary cancellation'
+      WHEN sp.status IN ('active', 'trialing') AND sp.cancel_at_period_end IS TRUE
+      THEN 'Cancelled - access not yet ended'
       ELSE sp.status
       END AS churn_reason,
 
@@ -465,6 +480,8 @@ view: prod_daily_subscriber_churn {
       WHEN sp.status = 'canceled' AND sp.cancel_at_period_end IS TRUE
       THEN 'Voluntary - cancelled at period end'
       WHEN sp.status = 'canceled'           THEN 'Voluntary - cancelled immediately'
+      WHEN sp.status IN ('active','trialing') AND sp.cancel_at_period_end IS TRUE
+      THEN 'Cancelled - access not yet ended'
       ELSE sp.status
       END AS churn_reason_detail,
 
@@ -481,6 +498,11 @@ view: prod_daily_subscriber_churn {
       sp.trial_end IS NOT NULL AND sp.trial_end > sp.initial_start_date AS came_via_trial,
 
       sp.current_period_end = sp.cancelled_at AS is_period_end_overwritten,
+
+      DATE(sp.current_period_end, 'America/New_York') AS access_ends_date,
+      DATE(sp.cancelled_at,       'America/New_York') AS cancelled_date,
+      sp.status IN ('active', 'trialing')
+      AND sp.cancel_at_period_end IS TRUE           AS is_pending_cancellation,
 
       ff.first_unpaid_invoice_ts,
       ff.next_retry_ts,
@@ -542,6 +564,17 @@ view: prod_daily_subscriber_churn {
       LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_private_profiles` pprof
       ON pprof.user_id = sp.user_id
       WHERE sp.status IN ('canceled', 'unpaid', 'past_due', 'incomplete_expired')
+      -- Lodged cancellations still inside their paid period. Stripe keeps
+      -- these 'active' until the period ends (verified on
+      -- sub_1UCOaUKnSBcoo17u0ksA6ZnM: cancelAtPeriodEnd true, status
+      -- active, currentPeriodEnd 2026-10-05). Without this clause they were
+      -- invisible to every tile until the day they churned — up to a month
+      -- of lag on a monthly plan.
+      -- 'trialing' is included defensively: only reachable via the payment
+      -- gate, so a trialing row here would mean a creator paid and then
+      -- started a trial, which should not happen. If any appear, find out
+      -- why rather than assuming they are fine.
+      OR (sp.status IN ('active', 'trialing') AND sp.cancel_at_period_end IS TRUE)
       ;;
   }
 
@@ -681,6 +714,40 @@ view: prod_daily_subscriber_churn {
     sql: ${TABLE}.is_period_end_overwritten ;;
     label: "Is Period End Overwritten"
     description: "current_period_end equals the cancellation instant — handoff item #4, 27 subscriptions as at 2026-09-08. Where cancel_at_period_end is also TRUE the churn is dated at cancellation rather than at the true period end, so it is recorded too early."
+  }
+
+  dimension: is_pending_cancellation {
+    type: yesno
+    sql: ${TABLE}.is_pending_cancellation ;;
+    label: "Is Pending Cancellation"
+    description: "Cancelled but still inside the paid period, so still has access. NOT churn yet, and NOT counted by Subscriptions Churned. This is the win-back window: they have told us they are leaving and have not left. Two exits — un-cancel and the row disappears from this view entirely, or the period ends and it becomes Voluntary cancellation dated at Access Ends."
+  }
+
+  dimension_group: access_ends {
+    type: time
+    convert_tz: no
+    datatype: date
+    sql: ${TABLE}.access_ends_date ;;
+    timeframes: [date, week, month]
+    label: "Access Ends"
+    description: "current_period_end — the day a pending cancellation actually loses access, and the deadline for a win-back attempt. Also the date the row will move to on the Churn or Pending axis once it churns. Beware: overwritten to the cancellation instant on 27 subscriptions (Is Period End Overwritten)."
+  }
+
+  dimension_group: cancelled {
+    type: time
+    convert_tz: no
+    datatype: date
+    sql: ${TABLE}.cancelled_date ;;
+    timeframes: [date, week, month]
+    label: "Cancelled"
+    description: "When the cancellation was lodged. For a pending cancellation this is where it sits on the Churn or Pending axis."
+  }
+
+  dimension: days_until_access_ends {
+    type: number
+    sql: DATE_DIFF(${TABLE}.access_ends_date, CURRENT_DATE('America/New_York'), DAY) ;;
+    label: "Days Until Access Ends"
+    description: "How long is left to win them back. Negative means the period already ended and Stripe has not yet flipped the status — worth checking if it happens."
   }
 
   dimension: days_since_first_failure {
@@ -907,10 +974,19 @@ view: prod_daily_subscriber_churn {
     drill_fields: [detail*]
   }
 
+  measure: pending_cancellation {
+    type: count_distinct
+    sql: ${TABLE}.subscription_id ;;
+    filters: [is_pending_cancellation: "yes"]
+    label: "Cancelled But Still Active"
+    description: "Cancelled and still inside the paid period. NOT churn — excluded from Subscriptions Churned. The win-back queue: drill for names, emails and Days Until Access Ends. On the Churn or Pending axis these sit on their cancellation date and will move to Access Ends when they churn."
+    drill_fields: [detail*]
+  }
+
   measure: payment_retrying {
     type: count_distinct
     sql: ${TABLE}.subscription_id ;;
-    filters: [is_churned: "no"]
+    filters: [is_churned: "no", is_pending_cancellation: "no"]
     label: "Payment Retrying (Not Yet Churned)"
     description: "In dunning, no churn date, so these do NOT appear on a Churn Date axis — query them without a date dimension. 38 as at 2026-09-08, abnormally high because write-off has stalled."
     drill_fields: [detail*]
@@ -949,7 +1025,8 @@ view: prod_daily_subscriber_churn {
 
   measure: fanout_check {
     type: number
-    sql: ${row_count} - ${subscriptions_churned} - ${payment_retrying} - ${future_dated_churns} ;;
+    sql: ${row_count} - ${subscriptions_churned} - ${payment_retrying}
+      - ${future_dated_churns} - ${pending_cancellation} ;;
     label: "Fanout Check (Should Be 0)"
     description: "Rows minus the three mutually exclusive states every row must be in. Non-zero means an attribution join is duplicating rows, which would silently double Revenue Collected Before Churn. The profile CTEs are deduped so this should stay 0."
   }
@@ -1023,6 +1100,8 @@ view: prod_daily_subscriber_churn {
       first_paid_date,
       last_paid_date,
       lifetime_days,
+      access_ends_date,
+      days_until_access_ends,
       payments_collected,
       revenue_collected,
       first_unpaid_date,

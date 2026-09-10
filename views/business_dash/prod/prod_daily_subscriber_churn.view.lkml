@@ -24,22 +24,16 @@
 #     view keys payment-failure churn off that write-off. So those 84 will land
 #     on the chart as they resolve, and early-September bars WILL GROW.
 #
-# WHY THE BACKLOG IS LARGER THAN USUAL — evidenced 2026-09-09
-#   Stripe's retry schedule was lengthened around 2026-08-30. Confirmed from
-#   invoice event timelines rather than from aggregate comparison:
-#     August    KGMPAFZA-0004 — failed 25 Aug 01:48, failed 26 Aug 01:50,
-#               marked uncollectible 26 Aug 01:50. Two attempts, write-off in
-#               the same minute as the second.
-#     September two attempts, then a third scheduled 8-12 days out. Write-off
-#               only follows the third.
-#   Recognition is therefore deferred by roughly two weeks, not lost.
-#
-#   Note the aggregate before/after comparison does NOT show this and should
-#   not be attempted: August invoices are almost all written off, and a
-#   written-off invoice has no next retry, so the comparison measures
-#   resolution status rather than schedule. Restricted to live subscriptions
-#   August returns no rows at all. Event timelines on individual invoices are
-#   the only reliable evidence.
+# NOT ESTABLISHED — do not repeat as fact:
+#   * WHY the backlog is larger than usual. A lengthened Stripe retry schedule
+#     is the leading theory but has not been demonstrated. The obvious test —
+#     comparing days-to-next-retry before and after 2026-08-30 — does not work:
+#     August invoices are almost all written off already and a written-off
+#     invoice has no next retry, so the comparison measures resolution status
+#     rather than schedule. Restricted to live subscriptions, August returns no
+#     rows at all and there is no baseline. Settle it from Stripe Dashboard ->
+#     Settings -> Billing -> Manage failed payments, which shows the schedule
+#     and its edit history.
 #
 # ALSO CHECKED AND CLEARED:
 #   * The loader is healthy: 55-85 invoice rows updated every day through the
@@ -229,19 +223,26 @@ view: prod_daily_subscriber_churn {
       ) = 1
       ),
 
+      -- GROUP BY + ANY_VALUE rather than a bare SELECT: a bare SELECT fans out
+      -- the whole view if dim_private_profiles ever holds two rows for a user.
+      -- Revenue Collected Before Churn is a type: sum and would double
+      -- silently. Fanout Check guards it.
       marketing_capture AS (
       SELECT
       user_id,
-      JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_campaign')        AS utm_campaign,
-      JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_source')          AS utm_source,
-      JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_regintent')       AS utm_regintent,
-      JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_onboarding_path') AS onboarding_path,
-      JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_planlevel')       AS plan_level,
-      JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent')          AS user_agent,
-      JSON_VALUE(private_profile, '$.email')                                          AS profile_email,
-      JSON_VALUE(private_profile, '$.sellerShippingAddress.firstName')                AS first_name,
-      JSON_VALUE(private_profile, '$.sellerShippingAddress.lastName')                 AS last_name
+      ANY_VALUE(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_campaign'))        AS utm_campaign,
+      ANY_VALUE(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_source'))          AS utm_source,
+      ANY_VALUE(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_regintent'))       AS utm_regintent,
+      ANY_VALUE(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_onboarding_path')) AS onboarding_path,
+      ANY_VALUE(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_planlevel'))       AS plan_level,
+      ANY_VALUE(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent'))          AS user_agent,
+      ANY_VALUE(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.signup_provider'))     AS signup_provider,
+      ANY_VALUE(JSON_VALUE(private_profile, '$.email'))                                          AS profile_email,
+      ANY_VALUE(JSON_VALUE(private_profile, '$.sellerShippingAddress.firstName'))                AS first_name,
+      ANY_VALUE(JSON_VALUE(private_profile, '$.sellerShippingAddress.lastName'))                 AS last_name
       FROM `popshoplive-26f81.dbt_popshop.dim_private_profiles`
+      WHERE user_id IS NOT NULL
+      GROUP BY user_id
       ),
 
       -- Regintent only, for eligibility. Kept separate from marketing_capture
@@ -507,6 +508,11 @@ view: prod_daily_subscriber_churn {
       WHEN mc.utm_source IS NOT NULL THEN 'marketing_campaign'
       ELSE 'organic_walk-in'
       END AS acquisition_source,
+      CASE
+      WHEN mc.signup_provider = 'instagram' THEN 'Instagram'
+      WHEN mc.signup_provider = 'facebook'  THEN 'Facebook'
+      ELSE 'Phone'
+      END AS signup_type,
 
       prof.username  AS sign_up_user_username,
       prof.url_code  AS sign_up_url_code,
@@ -768,6 +774,13 @@ view: prod_daily_subscriber_churn {
     description: "marketing_campaign when a campaign or utm_source was captured, otherwise organic_walk-in. Same derivation as prod_trial_report, so the two pivot identically."
   }
 
+  dimension: signup_type {
+    type: string
+    sql: ${TABLE}.signup_type ;;
+    label: "Signup Type"
+    description: "Instagram, Facebook or Phone, from onboardingMarketingCapture.signup_provider. Anything not instagram or facebook — including a missing value — falls to Phone, matching prod_trial_report. Phone therefore means 'phone or unknown'."
+  }
+
   # ——— Creator ———
 
   dimension: sign_up_user_username { type: string sql: ${TABLE}.sign_up_user_username ;; label: "Username" }
@@ -929,6 +942,18 @@ view: prod_daily_subscriber_churn {
 
   # ——— Guards ———
 
+  measure: row_count {
+    type: count
+    hidden: yes
+  }
+
+  measure: fanout_check {
+    type: number
+    sql: ${row_count} - ${subscriptions_churned} - ${payment_retrying} - ${future_dated_churns} ;;
+    label: "Fanout Check (Should Be 0)"
+    description: "Rows minus the three mutually exclusive states every row must be in. Non-zero means an attribution join is duplicating rows, which would silently double Revenue Collected Before Churn. The profile CTEs are deduped so this should stay 0."
+  }
+
   measure: churn_reason_accounting_check {
     type: number
     sql: ${subscriptions_churned} - ${churned_payment_failed} - ${churned_voluntary} ;;
@@ -986,6 +1011,7 @@ view: prod_daily_subscriber_churn {
       user_id,
       first_name,
       last_name,
+      profile_email,
       sign_up_user_username,
       sign_up_user_email,
       sign_up_user_url,
@@ -1010,12 +1036,14 @@ view: prod_daily_subscriber_churn {
       subscription_status,
       payment_sequence,
       marketing_campaign,
+      signup_type,
       acquisition_source,
       utm_regintent,
       business_type,
       onboarding_path,
       plan_level,
-      device_category
+      device_category,
+      user_agent
     ]
   }
 }

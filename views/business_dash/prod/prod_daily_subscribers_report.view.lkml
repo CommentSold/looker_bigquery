@@ -124,8 +124,29 @@ view: prod_daily_subscribers_report {
         SELECT TIMESTAMP('2026-09-02 15:30:00+00') AS trial_removal_ts
       ),
 
+      -- Carries the attribution fields as well as utm_regintent. The
+      -- eligibility filter still reads only oe.utm_regintent, so widening this
+      -- CTE cannot change the population. device_category regex copied from
+      -- prod_trial_report so the two views bucket devices identically.
       onboarding_events_dedup AS (
-      SELECT user_id, utm_regintent
+      SELECT
+      user_id,
+      context_campaign_campaign        AS marketing_campaign,
+      context_campaign_onboarding_path AS onboarding_path,
+      context_campaign_planlevel       AS plan_level,
+      context_user_agent               AS user_agent,
+      utm_regintent,
+      business_type,
+      CASE
+      WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(bot|crawler|spider|crawl|slurp|googlebot|bingpreview|facebookexternalhit|twitterbot|linkedinbot|discordbot|telegrambot|google-read-aloud)') THEN 'BOT'
+      WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(wv|webview|meta-iab|metaiab|facebook|fban|fbav|instagram|iabmv/1|whatsapp|line|linkedinapp|snapchat|gsa/|googleapp/|youtube|tiktok|reddit)') THEN 'WEBVIEW'
+      WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(iphone|ipad|ipod|cpu iphone os|cpu os)') THEN 'IOS'
+      WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'android') THEN 'ANDROID'
+      WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(windows nt|win64|wow64)') THEN 'WINDOWS_DESKTOP'
+      WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(macintosh|mac os x)') AND NOT REGEXP_CONTAINS(LOWER(context_user_agent), r'(iphone|ipad)') THEN 'MACOS_DESKTOP'
+      WHEN REGEXP_CONTAINS(LOWER(context_user_agent), r'(linux|x11)') AND NOT REGEXP_CONTAINS(LOWER(context_user_agent), r'android') THEN 'LINUX_DESKTOP'
+      ELSE 'OTHER'
+      END AS device_category
       FROM `popshoplive-26f81.popstore.popstore_onboarding_screen_action`
       WHERE (scene = 'onboarding' OR scene IS NULL)
       AND (step_name = 'onboarding_complete' OR step_name IS NULL)
@@ -139,13 +160,51 @@ view: prod_daily_subscribers_report {
       ) = 1
       ),
 
-      marketing_capture AS (
+      -- Regintent only, for the eligibility filter. Kept separate so the
+      -- eligibility block stays byte-identical to the other prod views.
+      regintent_capture AS (
       SELECT
       user_id,
       ANY_VALUE(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_regintent')) AS utm_regintent
       FROM `popshoplive-26f81.dbt_popshop.dim_private_profiles`
       WHERE user_id IS NOT NULL
       GROUP BY user_id
+      ),
+
+      -- Attribution from the profile JSON. GROUP BY + ANY_VALUE rather than a
+      -- bare SELECT: a bare SELECT would fan out the whole view if
+      -- dim_private_profiles ever held two rows for a user, and
+      -- First Payment Revenue is a type: sum, so it would double silently.
+      -- Fanout Check guards it.
+      marketing_capture AS (
+      SELECT
+      user_id,
+      ANY_VALUE(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_campaign'))       AS utm_campaign,
+      ANY_VALUE(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_source'))         AS utm_source,
+      ANY_VALUE(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_regintent'))      AS utm_regintent,
+      ANY_VALUE(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_onboarding_path')) AS onboarding_path,
+      ANY_VALUE(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.utm_planlevel'))      AS plan_level,
+      ANY_VALUE(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.user_agent'))         AS user_agent,
+      ANY_VALUE(JSON_VALUE(private_profile, '$.onboardingMarketingCapture.signup_provider'))    AS signup_provider,
+      ANY_VALUE(JSON_VALUE(private_profile, '$.email'))                                         AS profile_email,
+      ANY_VALUE(JSON_VALUE(private_profile, '$.sellerShippingAddress.firstName'))               AS first_name,
+      ANY_VALUE(JSON_VALUE(private_profile, '$.sellerShippingAddress.lastName'))                AS last_name
+      FROM `popshoplive-26f81.dbt_popshop.dim_private_profiles`
+      WHERE user_id IS NOT NULL
+      GROUP BY user_id
+      ),
+
+      -- Deduped so the joins below cannot fan out.
+      profiles AS (
+      SELECT user_id, username, url_code, profile
+      FROM `popshoplive-26f81.dbt_popshop.dim_profiles`
+      QUALIFY ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY user_id) = 1
+      ),
+
+      private_profiles AS (
+      SELECT user_id, email
+      FROM `popshoplive-26f81.dbt_popshop.dim_private_profiles`
+      QUALIFY ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY user_id) = 1
       ),
 
       -- Population IDENTICAL to prod_new_paid_subscribers_by_plan and
@@ -163,13 +222,13 @@ view: prod_daily_subscribers_report {
       ON p.user_id = s.store_id
       LEFT JOIN `popshoplive-26f81.dbt_popshop.dim_private_profiles` pprof
       ON pprof.user_id = p.user_id
-      LEFT JOIN marketing_capture mc       ON mc.user_id = p.user_id
+      LEFT JOIN regintent_capture rc       ON rc.user_id = p.user_id
       LEFT JOIN onboarding_events_dedup oe ON oe.user_id = p.user_id
       WHERE p.apps_pop_store = TRUE
       AND p.user_type IN ('seller', 'verifiedSeller')
       -- COALESCE around the comparison, never NOT (COALESCE(...) = 'x'):
       -- the latter is NULL when both sides are NULL and drops those rows.
-      AND NOT COALESCE(COALESCE(oe.utm_regintent, mc.utm_regintent) = 'vidcon', FALSE)
+      AND NOT COALESCE(COALESCE(oe.utm_regintent, rc.utm_regintent) = 'vidcon', FALSE)
       AND (pprof.email IS NULL
       OR NOT REGEXP_CONTAINS(LOWER(pprof.email),
       r'@(test\.com|example\.com|popshoplive\.com|commentsold\.com|pop\.store)$'))
@@ -255,7 +314,6 @@ view: prod_daily_subscribers_report {
       CONCAT(sq.user_id, '-', sq.subscription_id) AS row_key,
 
       DATE(sq.paid_ts, 'America/New_York') AS paid_date,
-      DATETIME(sq.paid_ts, 'America/New_York') AS paid_at_et,
       sq.payment_amount,
       sq.payment_sequence,
       sq.prev_subscription_id,
@@ -300,13 +358,46 @@ view: prod_daily_subscribers_report {
       ELSE 'New - direct purchase'
       END AS subscriber_type,
 
-      sq.paid_ts >= dm.trial_removal_ts AS is_post_trial_removal
+      sq.paid_ts >= dm.trial_removal_ts AS is_post_trial_removal,
+
+      -- Marketing attribution. Same COALESCE order and same
+      -- acquisition_source / signup_type derivations as prod_trial_report,
+      -- so the two views pivot identically.
+      COALESCE(oe.marketing_campaign, mc.utm_campaign)                            AS marketing_campaign,
+      COALESCE(oe.utm_regintent,      mc.utm_regintent)                           AS utm_regintent,
+      COALESCE(oe.business_type,      JSON_VALUE(prof.profile, '$.businessType')) AS business_type,
+      COALESCE(oe.onboarding_path,    mc.onboarding_path)                         AS onboarding_path,
+      COALESCE(oe.plan_level,         mc.plan_level)                              AS plan_level,
+      COALESCE(oe.device_category,    'No Onboarding Event')                      AS device_category,
+      COALESCE(oe.user_agent,         mc.user_agent)                              AS user_agent,
+      mc.utm_source                                                               AS utm_source,
+      CASE
+      WHEN COALESCE(oe.marketing_campaign, mc.utm_campaign) IS NOT NULL THEN 'marketing_campaign'
+      WHEN mc.utm_source IS NOT NULL THEN 'marketing_campaign'
+      ELSE 'organic_walk-in'
+      END AS acquisition_source,
+      CASE
+      WHEN mc.signup_provider = 'instagram' THEN 'Instagram'
+      WHEN mc.signup_provider = 'facebook'  THEN 'Facebook'
+      ELSE 'Phone'
+      END AS signup_type,
+
+      prof.username  AS sign_up_user_username,
+      prof.url_code  AS sign_up_url_code,
+      pprof.email    AS sign_up_user_email,
+      mc.profile_email,
+      mc.first_name,
+      mc.last_name
 
       FROM sequenced sq
       CROSS JOIN deploy_marker dm
       INNER JOIN eligible_creators ec ON ec.user_id = sq.user_id
       LEFT JOIN subscription_plan sp  ON sp.subscription_id = sq.subscription_id
       LEFT JOIN prior_trials pt       ON pt.user_id = sq.user_id
+      LEFT JOIN onboarding_events_dedup oe ON oe.user_id = sq.user_id
+      LEFT JOIN marketing_capture mc  ON mc.user_id = sq.user_id
+      LEFT JOIN profiles prof         ON prof.user_id = sq.user_id
+      LEFT JOIN private_profiles pprof ON pprof.user_id = sq.user_id
       ;;
   }
 
@@ -333,16 +424,6 @@ view: prod_daily_subscribers_report {
     timeframes: [date, week, month, quarter, year]
     label: "Paid"
     description: "Day of this subscription's first billable collected payment, America/New_York. The x-axis."
-  }
-
-  dimension_group: paid_at {
-    type: time
-    timeframes: [time, hour, minute, hour_of_day, day_of_week]
-    datatype: datetime
-    convert_tz: no
-    sql: ${TABLE}.paid_at_et ;;
-    label: "Paid At (ET)"
-    description: "Exact moment the first billable payment was collected, in America/New_York. Converted in SQL, not by Looker: this model sets no query_timezone, so convert_tz would fall back to a connection default that an admin can change and that may resolve per-user. Stripe's own timestamp, not our ingestion time."
   }
 
   dimension_group: signup {
@@ -495,6 +576,58 @@ view: prod_daily_subscribers_report {
     description: "From signup, not from subscription start. Reads in the hundreds for dormant creators who return and buy, so it is NOT a deploy indicator — use Days Subscription Start to Payment for that."
   }
 
+  # ——— Marketing attribution ———
+
+  dimension: marketing_campaign { type: string sql: ${TABLE}.marketing_campaign ;; label: "Marketing Campaign" }
+  dimension: utm_regintent      { type: string sql: ${TABLE}.utm_regintent ;;      label: "UTM Regintent" }
+  dimension: utm_source         { type: string sql: ${TABLE}.utm_source ;;         label: "UTM Source" }
+  dimension: business_type      { type: string sql: ${TABLE}.business_type ;;      label: "Business Type" }
+  dimension: onboarding_path    { type: string sql: ${TABLE}.onboarding_path ;;    label: "Onboarding Path" }
+  dimension: plan_level         { type: string sql: ${TABLE}.plan_level ;;         label: "Plan Level" }
+  dimension: device_category    { type: string sql: ${TABLE}.device_category ;;    label: "Device Category" }
+  dimension: user_agent         { type: string sql: ${TABLE}.user_agent ;;         label: "User Agent" }
+
+  dimension: acquisition_source {
+    type: string
+    sql: ${TABLE}.acquisition_source ;;
+    label: "Acquisition Source"
+    description: "marketing_campaign when a campaign or utm_source was captured, otherwise organic_walk-in. Same derivation as prod_trial_report and prod_daily_subscriber_churn, so all three pivot identically."
+  }
+
+  dimension: signup_type {
+    type: string
+    sql: ${TABLE}.signup_type ;;
+    label: "Signup Type"
+    description: "Instagram, Facebook or Phone, from onboardingMarketingCapture.signup_provider. Anything that is not instagram or facebook — including a missing value — falls to Phone, matching prod_trial_report. Phone is therefore 'phone or unknown', not strictly phone."
+  }
+
+  # ——— Creator ———
+
+  dimension: sign_up_user_username { type: string sql: ${TABLE}.sign_up_user_username ;; label: "Username" }
+  dimension: sign_up_user_email    { type: string sql: ${TABLE}.sign_up_user_email ;;    label: "Email" }
+  dimension: first_name            { type: string sql: ${TABLE}.first_name ;;            label: "First Name" }
+  dimension: last_name             { type: string sql: ${TABLE}.last_name ;;             label: "Last Name" }
+
+  dimension: profile_email {
+    type: string
+    sql: ${TABLE}.profile_email ;;
+    label: "Profile Email (JSON)"
+    description: "Email from private_profile JSON ($.email). May differ from Email, which comes from the dim_private_profiles column."
+  }
+
+  dimension: full_name {
+    type: string
+    sql: TRIM(CONCAT(COALESCE(${TABLE}.first_name, ''), ' ', COALESCE(${TABLE}.last_name, ''))) ;;
+    label: "Full Name"
+  }
+
+  dimension: sign_up_user_url {
+    type: string
+    sql: 'https://pop.store/' || ${TABLE}.sign_up_url_code ;;
+    label: "Storefront URL"
+    link: { label: "Open storefront" url: "{{ value }}" }
+  }
+
   # ——— Plan ———
 
   dimension: plan_name {
@@ -632,6 +765,18 @@ view: prod_daily_subscribers_report {
 
   # ——— Guards ———
 
+  measure: row_count {
+    type: count
+    hidden: yes
+  }
+
+  measure: fanout_check {
+    type: number
+    sql: ${row_count} - ${total_subscribers} ;;
+    label: "Fanout Check (Should Be 0)"
+    description: "Rows minus distinct subscriptions. Non-zero means one of the attribution joins is duplicating rows, which would silently double First Payment Revenue and Average Payment. The profile CTEs are deduped so this should stay 0 — it is here because a type: sum measure gives no other warning."
+  }
+
   measure: subscriber_type_accounting_check {
     type: number
     sql: ${total_subscribers}
@@ -667,7 +812,13 @@ view: prod_daily_subscribers_report {
     fields: [
       user_id,
       subscription_id,
-      paid_at_time,
+      first_name,
+      last_name,
+      profile_email,
+      sign_up_user_username,
+      sign_up_user_email,
+      sign_up_user_url,
+      paid_date,
       subscriber_type,
       payment_sequence,
       days_since_previous_payment,
@@ -675,6 +826,7 @@ view: prod_daily_subscribers_report {
       coupon_name,
       plan_name,
       plan_interval,
+      plan_level,
       payment_amount,
       signup_date,
       days_signup_to_payment,
@@ -683,7 +835,15 @@ view: prod_daily_subscribers_report {
       trial_end_date,
       trial_length_days,
       first_trial_start_date,
-      subscription_status_now
+      subscription_status_now,
+      signup_type,
+      marketing_campaign,
+      acquisition_source,
+      utm_regintent,
+      business_type,
+      onboarding_path,
+      device_category,
+      user_agent
     ]
   }
 }

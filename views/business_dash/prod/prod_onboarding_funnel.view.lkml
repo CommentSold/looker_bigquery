@@ -94,6 +94,7 @@ view: prod_onboarding_funnel {
       END AS acquisition_source,
       CASE WHEN mc.signup_provider = 'instagram' THEN 'Instagram'
         WHEN mc.signup_provider = 'facebook' THEN 'Facebook'
+        WHEN mc.signup_provider = 'apple' THEN 'Apple'
         ELSE 'Phone'
       END AS signup_type
     FROM `popshoplive-26f81.dbt_popshop.dim_profiles` prof

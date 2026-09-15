@@ -501,6 +501,18 @@ view: prod_daily_subscriber_churn {
 
       DATE(sp.current_period_end, 'America/New_York') AS access_ends_date,
       DATE(sp.cancelled_at,       'America/New_York') AS cancelled_date,
+      DATE(sp.cancellation_applied_at, 'America/New_York') AS cancellation_applied_date,
+      sp.cancellation_applied_at IS NOT NULL AS is_user_cancellation,
+
+      -- How long after they started paying did they cancel. Measured from
+      -- FIRST PAYMENT, not from subscription start: for a trial converter
+      -- those are 7 days apart and the payment is the point at which the
+      -- customer had something to regret. days_start_to_cancelled is carried
+      -- as well so the other reading is available without a code change.
+      DATE_DIFF(DATE(sp.cancelled_at, 'America/New_York'),
+      DATE(sq.first_paid_ts, 'America/New_York'), DAY) AS days_paid_to_cancelled,
+      DATE_DIFF(DATE(sp.cancelled_at, 'America/New_York'),
+      DATE(sp.initial_start_date, 'America/New_York'), DAY) AS days_start_to_cancelled,
       sp.status IN ('active', 'trialing')
       AND sp.cancel_at_period_end IS TRUE           AS is_pending_cancellation,
 
@@ -750,6 +762,72 @@ view: prod_daily_subscriber_churn {
     description: "How long is left to win them back. Negative means the period already ended and Stripe has not yet flipped the status — worth checking if it happens."
   }
 
+  dimension: time_to_cancellation_band {
+    type: string
+    sql:
+      CASE
+        WHEN ${TABLE}.cancellation_applied_date IS NULL
+          THEN 'No user cancellation (payment failure)'
+        WHEN ${TABLE}.days_paid_to_cancelled <= 0 THEN 'Same day as payment'
+        WHEN ${TABLE}.days_paid_to_cancelled <= 7 THEN 'Within 7 days'
+        WHEN ${TABLE}.days_paid_to_cancelled <= 30 THEN '8-30 days'
+        ELSE 'Over 30 days'
+      END ;;
+    label: "Time to Cancellation (Band)"
+    description: "How long after their first payment the customer cancelled. Measured from FIRST PAYMENT, not subscription start — for a trial converter those are 7 days apart, and the payment is the point the customer had something to regret. 'Same day as payment' is <= 0 days, so it also catches the handful cancelled before the payment timestamp. 'No user cancellation' means cancellation_applied_at is NULL: a dunning write-off, where Stripe set cancelled_at but nobody chose to leave — timing that row would be meaningless. NOT the same definition as cancellation_status on the Post-Trial graph, which measured trial start to trial end."
+  }
+
+  dimension: cancellation_timing {
+    type: string
+    sql:
+      CASE
+        WHEN COALESCE(${TABLE}.cancelled_date, ${TABLE}.churn_date)
+             = ${TABLE}.subscription_start_date
+          THEN 'same_day'
+        ELSE 'later'
+      END ;;
+    label: "Cancellation Timing"
+    description: "same_day when the subscription ended on the day it STARTED, otherwise later. Same name, values and reference point as cancellation_timing in prod_trial_cancellations, so the two read the same way. TWO DELIBERATE DIFFERENCES from that view: (1) it falls back to fs.updated_at when cancelled_at is NULL — an ingestion timestamp — whereas this uses churn_date, which resolves through the Stripe cancelledAt epoch and the dunning write-off before touching cancelled_at; (2) it compares raw UTC dates, this compares America/New_York, matching every other date in this view. Expect small disagreements on rows near midnight. The two views never share rows anyway: prod_trial_cancellations excludes anyone with a successful post-trial payment, which is precisely this view's population."
+  }
+
+  dimension: cancellation_timing_combined {
+    type: string
+    sql: CONCAT(${cancellation_timing}, ' - ', ${TABLE}.churn_reason) ;;
+    label: "Cancellation Timing - Reason"
+    description: "Pivot on this to reproduce the Daily Trials Cancellations layout: same_day / later crossed with churn reason, one series each. Up to eight values, which is a lot for a stacked bar — use it on a table, or filter to one reason and pivot on Same Day or Later instead."
+  }
+
+  dimension: days_paid_to_cancelled {
+    type: number
+    sql: ${TABLE}.days_paid_to_cancelled ;;
+    label: "Days Payment to Cancellation"
+    description: "First payment to cancellation, in days. NULL when there was no cancellation. Negative is possible if the cancellation timestamp precedes the payment timestamp on the same day."
+  }
+
+  dimension: days_start_to_cancelled {
+    type: number
+    sql: ${TABLE}.days_start_to_cancelled ;;
+    label: "Days Subscription Start to Cancellation"
+    description: "Subscription start to cancellation. For a trial converter this includes the 7 trial days, so it reads ~7 higher than Days Payment to Cancellation. Use whichever matches the question; do not mix them in one analysis."
+  }
+
+  dimension: is_user_cancellation {
+    type: yesno
+    sql: ${TABLE}.is_user_cancellation ;;
+    label: "Is User Cancellation"
+    description: "cancellation_applied_at is populated, so someone actively cancelled. No means the subscription ended through dunning — Stripe set cancelled_at but the customer never chose to leave. Filter to Yes before reading any cancellation-timing analysis."
+  }
+
+  dimension_group: cancellation_applied {
+    type: time
+    convert_tz: no
+    datatype: date
+    sql: ${TABLE}.cancellation_applied_date ;;
+    timeframes: [date, week, month]
+    label: "Cancellation Applied"
+    description: "When the user's cancellation was recorded. NULL for dunning write-offs."
+  }
+
   dimension: days_since_first_failure {
     type: number
     sql: ${TABLE}.days_since_first_failure ;;
@@ -992,6 +1070,33 @@ view: prod_daily_subscriber_churn {
     drill_fields: [detail*]
   }
 
+  measure: same_day_cancellations {
+    type: count_distinct
+    sql: ${TABLE}.subscription_id ;;
+    filters: [cancellation_timing: "same_day"]
+    label: "Same Day Cancellations"
+    description: "Ended on the day the subscription started. Same definition and name as prod_trial_cancellations.same_day_cancellations, so the two tiles can sit side by side. Cancelled Same Day as Payment is the payment-based cut — for a trial converter those are 7 days apart and the two will not agree."
+    drill_fields: [detail*]
+  }
+
+  measure: later_cancellations {
+    type: count_distinct
+    sql: ${TABLE}.subscription_id ;;
+    filters: [cancellation_timing: "later"]
+    label: "Later Cancellations"
+    description: "Ended on a different day from the subscription start. Mirrors prod_trial_cancellations.later_cancellations."
+    drill_fields: [detail*]
+  }
+
+  measure: cancelled_same_day {
+    type: count_distinct
+    sql: ${TABLE}.subscription_id ;;
+    filters: [is_user_cancellation: "yes", days_paid_to_cancelled: "<=0"]
+    label: "Cancelled Same Day as Payment"
+    description: "Paid and cancelled on the same day. Buyer's remorse rather than churn. Worth watching post-2026-09-02: two annual subscriptions have already done this, and with no trial to test the product the pattern has more room to grow."
+    drill_fields: [detail*]
+  }
+
   measure: churned_first_cycle {
     type: count_distinct
     sql: ${TABLE}.subscription_id ;;
@@ -1100,6 +1205,11 @@ view: prod_daily_subscriber_churn {
       first_paid_date,
       last_paid_date,
       lifetime_days,
+      cancellation_timing,
+      time_to_cancellation_band,
+      days_paid_to_cancelled,
+      days_start_to_cancelled,
+      cancellation_applied_date,
       access_ends_date,
       days_until_access_ends,
       payments_collected,

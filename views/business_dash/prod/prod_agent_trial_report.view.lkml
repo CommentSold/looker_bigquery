@@ -235,6 +235,7 @@ view: prod_agent_trial_report {
 
       CASE WHEN mc.signup_provider = 'instagram' THEN 'Instagram'
         WHEN mc.signup_provider = 'facebook' THEN 'Facebook'
+        WHEN mc.signup_provider = 'apple' THEN 'Apple'
         ELSE 'Phone'
       END AS signup_type
 
